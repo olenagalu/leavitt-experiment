@@ -1,0 +1,5 @@
+To start the console trial from the server Jetson, you need to open 
+Terminal and tyoe the following:
+            1. cd ~/Desktop/leavitt-experiment
+            2. python3 server.py 192.168.0.140 5001
+After this command runs, the trial will start in the console.

@@ -1,0 +1,8 @@
+To open the SLM Interaction Dashboard, first open Terminal on the server Jetson
+and enter the following:
+            1. cd ~/Desktop/leavitt-dashboard
+            2. python3 dashboard_server.py --http-host 0.0.0.0 --http-port 5173 --tcp-host 0.0.0.0 --tcp-port 5001
+After the server starts, open Firefox and enter:
+            http://192.168.0.140 
+in the search bar. Then you should be on the site and can start the experiment.
+Later, I will change this so Jetson will automatically run the command.

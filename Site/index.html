@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MINDS Leavitt Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="hero-panel" aria-labelledby="page-title">
+        <div class="topbar">
+          <div class="brand-lockup">
+            <img src="minds-logo.png" alt="MINDS logo">
+            <div>
+              <p class="eyebrow">Leavitt Experiment</p>
+              <h1 id="page-title">Jetson interaction dashboard</h1>
+            </div>
+          </div>
+          <div class="status-pill" aria-live="polite">
+            <span class="status-dot"></span>
+            <span id="connectionStatus">Demo mode</span>
+          </div>
+        </div>
+
+        <div class="workspace">
+          <aside class="control-rail" aria-label="Experiment controls">
+            <div class="control-group">
+              <span class="group-label">Dashboard</span>
+              <div class="segmented" role="tablist" aria-label="Dashboard source">
+                <button class="segment active" type="button" data-source="demo" role="tab" aria-selected="true">
+                  Demo
+                </button>
+                <button class="segment" type="button" data-source="live" role="tab" aria-selected="false">
+                  Live
+                </button>
+              </div>
+            </div>
+
+            <div class="control-group">
+              <span class="group-label">Topology</span>
+              <div class="segmented" role="tablist" aria-label="Topology mode">
+                <button class="segment active" type="button" data-mode="broadcast" role="tab" aria-selected="true">
+                  Broadcast
+                </button>
+                <button class="segment" type="button" data-mode="circle" role="tab" aria-selected="false">
+                  Circle
+                </button>
+              </div>
+            </div>
+
+            <div class="control-group">
+              <label class="slider-label" for="agentCount">
+                <span>Jetsons</span>
+                <strong id="agentCountValue">5</strong>
+              </label>
+              <input id="agentCount" type="range" min="2" max="5" value="5">
+            </div>
+
+            <div class="button-row demo-controls">
+              <button id="playPause" class="icon-button" type="button" aria-label="Pause animation" title="Pause animation">
+                <span class="pause-icon" aria-hidden="true"></span>
+              </button>
+              <button id="stepButton" class="text-button" type="button">Next message</button>
+            </div>
+
+            <div class="button-row live-controls" hidden>
+              <button id="startTrial" class="primary-button" type="button">Start live trial</button>
+            </div>
+
+            <div class="metric-grid" aria-label="Trial metrics">
+              <div class="metric">
+                <span>Round</span>
+                <strong id="roundMetric">1</strong>
+              </div>
+              <div class="metric">
+                <span>Messages</span>
+                <strong id="messageMetric">0</strong>
+              </div>
+              <div class="metric wide">
+                <span>Shared figure</span>
+                <strong id="symbolMetric">?</strong>
+              </div>
+            </div>
+          </aside>
+
+          <section class="network-stage" aria-label="Animated Jetson network">
+            <canvas id="networkCanvas" width="960" height="720" aria-hidden="true"></canvas>
+            <div id="agentLayer" class="agent-layer"></div>
+            <div class="legend-strip" aria-label="Legend">
+              <span><i class="legend-line all"></i> visible to all</span>
+              <span><i class="legend-line neighbor"></i> neighbor only</span>
+              <span><i class="legend-pulse"></i> active message</span>
+            </div>
+          </section>
+
+          <aside class="info-panel" aria-label="Current experiment details">
+            <div>
+              <p class="eyebrow" id="sourceLabel">Demo animation</p>
+              <h2 id="modeTitle">Broadcast mode</h2>
+              <p id="modeDescription">
+                The speaker sends one public chat message. Every other active Jetson receives it.
+              </p>
+            </div>
+
+            <div class="route-box">
+              <span class="route-label">Current route</span>
+              <strong id="routeText">Agent1 -> ALL</strong>
+            </div>
+
+            <div>
+              <div class="section-title">
+                <span>Event feed</span>
+                <button id="clearFeed" type="button">Clear</button>
+              </div>
+              <ol id="eventFeed" class="event-feed" aria-live="polite"></ol>
+            </div>
+
+            <div class="results-section">
+              <div class="section-title">
+                <span>Success table</span>
+                <button id="clearResults" type="button">Clear</button>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Trial</th>
+                      <th>Mode</th>
+                      <th>Result</th>
+                      <th>Rounds</th>
+                      <th>Time</th>
+                    </tr>
+                  </thead>
+                  <tbody id="resultsBody">
+                    <tr><td colspan="5">No live trials yet.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

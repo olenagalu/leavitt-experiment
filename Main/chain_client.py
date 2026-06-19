@@ -1,5 +1,5 @@
 """
-Circle-topology helpers for client.py.
+Chain-topology helpers for client.py.
 
 This module is imported by client.py and is not intended to run directly.
 """
@@ -8,7 +8,7 @@ import re
 
 
 DEBUG = False
-DEFAULT_DISCUSSION_ROUNDS = 6
+DEFAULT_DISCUSSION_ROUNDS = 8
 
 
 def normalize_agent_name(name):
@@ -20,26 +20,26 @@ def normalize_agent_name(name):
     return stripped
 
 
-def build_circle_prompt(
+def build_chain_prompt(
     agent_name,
     my_symbols,
     conversation_history,
     num_agents,
     current_round,
     can_answer,
-    circle_neighbors,
-    preferred_neighbor=None,
+    chain_contacts,
+    preferred_contact=None,
     already_shared_full_list=False,
     last_own_message="none",
     discussion_rounds=None,
 ):
     symbols_str = ", ".join(my_symbols)
     figures_list = ", ".join(my_symbols)
-    recipients_text = ", ".join(circle_neighbors)
+    recipients_text = ", ".join(chain_contacts)
     recipient_choices_text = f"<one of: {recipients_text}>" if recipients_text else "<no valid recipients>"
-    preferred_text = preferred_neighbor or "choose either valid recipient"
+    preferred_text = preferred_contact or "choose one valid recipient"
     shared_full_list_text = "yes" if already_shared_full_list else "no"
-    recent_sources_text = " OR ".join(circle_neighbors) if circle_neighbors else "VALID RECIPIENTS"
+    recent_sources_text = ", ".join(chain_contacts) if chain_contacts else "VALID RECIPIENTS"
     turn_mode = "answer" if can_answer else "discussion"
     try:
         discussion_rounds = int(discussion_rounds)
@@ -48,6 +48,15 @@ def build_circle_prompt(
     discussion_rounds = max(0, discussion_rounds)
     answer_start_round = discussion_rounds + 1
     final_answer_allowed = "yes" if can_answer else "no"
+    try:
+        round_number = int(current_round)
+    except (TypeError, ValueError):
+        round_number = 1
+    full_list_rule = (
+        "* Share your full figure list with one valid recipient.\n"
+        if round_number <= 1
+        else ""
+    )
 
     history_text = ""
     for msg in conversation_history[-5:]:
@@ -64,7 +73,7 @@ YOUR TURN:
 Final answer is allowed now, but not required.
 If unsure, keep discussing.
 
-Use ACTION: ANSWER only if one figure is in your list and is supported by messages from all agents.
+Use ACTION: ANSWER only if one figure is in your list and is clearly supported by the received messages.
 Do not guess.
 If more than one figure is still possible, use ACTION: CHAT.
 
@@ -85,7 +94,7 @@ YOUR TURN:
 This is still the discussion stage.
 Do not submit a final answer.
 Use ACTION: CHAT only.
-Share useful information, compare figure lists, respond to questions, or pass useful information from one allowed recipient to another.
+Share useful information, compare figure lists, respond to questions, or pass useful information from one valid recipient to another.
 
 Use:
 
@@ -103,31 +112,35 @@ Your figures:
 Goal:
 Find the one figure shared by all agents.
 
-Circle topology:
+Chain topology:
 
+* You are connected in a chain.
 * You can send one private message per turn.
 * You may send it only to one of these valid recipients: {recipients_text}.
 * Only the selected recipient will see your message.
-* You may pass useful information from one valid recipient to the other valid recipient.
+* You must choose the recipient yourself before writing the message.
+* You must choose exactly one valid recipient.
+* If you have two valid recipients, choose the one who most needs the information or the suggested recipient.
+* If you have two valid recipients, pass useful information between them.
+* If you have one valid recipient, communicate with that recipient.
 
 Rules:
-
 * First, choose one valid recipient to whom you will talk.
-* Use only your figures and messages received from valid recipients.
-* First share your full figure list with one valid recipient.
-* After you already shared your full list, do not repeat the full list unless it is useful for comparison.
-* If another agent asked a question, answer it.
-* Compare your figures with information from received messages.
-* Share useful matches, non-matches, possible overlaps, or candidate figures.
-* You may propose a possible common figure only if it is in your list and appears in information from another agent.
-* Confirm another proposal only if that figure is in your list.
-* Reject another proposal if that figure is not in your list.
-* Rounds 1 through {discussion_rounds} are discussion only. Do not submit a final answer in those rounds.
-* Round {answer_start_round} and later is answer-allowed mode. You may either continue discussion or submit a final answer.
-* Submit a final answer only if one figure is clearly supported by the messages.
-* If unsure, continue discussion.
+* Use only your figures and received messages.
+{full_list_rule}
+* Answer questions from other agents.
+* Compare figure lists and pass useful information along the chain.
+* Propose, confirm, or reject a figure only if it is in your own list.
+* Do not guess.
 * Do not repeat your previous message.
 * Keep messages short.
+
+Timing:
+
+* Rounds 1 through {discussion_rounds} are discussion only. Do not submit a final answer in those rounds.
+* Round {answer_start_round} and later is answer-allowed mode. You may either continue discussion or submit a final answer.
+* Submit a final answer only if one figure is clearly supported by the received messages.
+* If unsure, continue discussion.
 
 Valid figures:
 square, circle, triangle, diamond, cross, asterisk
@@ -153,7 +166,7 @@ RECENT MESSAGES RECEIVED FROM {recent_sources_text}:
 """
 
 
-def parse_circle_response(raw, agent_name, circle_neighbors):
+def parse_chain_response(raw, agent_name, chain_contacts):
     raw_upper = raw.upper()
 
     if "ACTION: ANSWER" in raw_upper or "ACTION:ANSWER" in raw_upper:
@@ -215,9 +228,9 @@ def parse_circle_response(raw, agent_name, circle_neighbors):
         text = raw
 
     normalized_target = normalize_agent_name(raw_target)
-    normalized_neighbors = {
-        normalize_agent_name(neighbor): neighbor
-        for neighbor in circle_neighbors
+    normalized_contacts = {
+        normalize_agent_name(contact): contact
+        for contact in chain_contacts
     }
 
     if DEBUG:
@@ -225,16 +238,19 @@ def parse_circle_response(raw, agent_name, circle_neighbors):
         print(f"[DEBUG] Normalized TO target from {agent_name}: {normalized_target}")
 
     if not raw_target:
-        target = circle_neighbors[0] if circle_neighbors else ""
+        target = chain_contacts[0] if chain_contacts else ""
+        target_source = "client_default"
         if DEBUG:
             print(f"[WARN] No TO target from {agent_name}. Defaulted to {target}.")
-    elif normalized_target not in normalized_neighbors:
+    elif normalized_target not in normalized_contacts:
         original_target = raw_target
-        target = circle_neighbors[0] if circle_neighbors else ""
+        target = chain_contacts[0] if chain_contacts else ""
+        target_source = "client_default"
         if DEBUG:
             print(f"[WARN] Invalid TO target from {agent_name}: {original_target}. Defaulted to {target}.")
     else:
-        target = normalized_neighbors[normalized_target]
+        target = normalized_contacts[normalized_target]
+        target_source = "agent"
 
     if DEBUG:
         print(f"[DEBUG] Final selected TO target from {agent_name}: {target}")
@@ -242,4 +258,11 @@ def parse_circle_response(raw, agent_name, circle_neighbors):
     if not text:
         text = raw
 
-    return {"action": "chat", "target": target, "text": text, "raw": raw}
+    return {
+        "action": "chat",
+        "target": target,
+        "text": text,
+        "raw": raw,
+        "target_source": target_source,
+        "original_target": raw_target,
+    }

@@ -1,5 +1,5 @@
 """
-LEAVITT SERVER - Multi-trial, selectable broadcast or circle topology.
+LEAVITT SERVER - Multi-trial, selectable broadcast, circle, chain, or Y topology.
 
 Runs the experiment server, coordinating Jetson agents by assigning private
 figure sets, routing turn-based messages, and checking whether they correctly
@@ -44,12 +44,9 @@ CIRCLE_HARD_STOP_BY_AGENTS = {
     4: 8,
     5: 10,
 }
-CIRCLE_ANSWER_ALLOWED_FROM_ROUND_BY_AGENTS = {
-    2: 2,
-    3: 3,
-    4: 4,
-    5: 5,
-}
+DEFAULT_CIRCLE_DISCUSSION_ROUNDS = 6
+DEFAULT_CHAIN_DISCUSSION_ROUNDS = 8
+DEFAULT_Y_DISCUSSION_ROUNDS = 8
 JETSON_SSH_USER = "minds_user"
 JETSON_HOSTNAMES = [
     "jetson1.local",
@@ -124,6 +121,32 @@ def get_circle_neighbors(agent_id, num_agents):
     return [left, right]
 
 
+def get_chain_contacts(agent_id, num_agents):
+    contacts = []
+    if agent_id > 1:
+        contacts.append(agent_id - 1)
+    if agent_id < num_agents:
+        contacts.append(agent_id + 1)
+    return contacts
+
+
+def get_y_contacts(agent_id):
+    contacts_by_agent = {
+        1: [3],
+        2: [3],
+        3: [1, 2, 4],
+        4: [3, 5],
+        5: [4],
+    }
+    return contacts_by_agent.get(agent_id, [])
+
+
+def display_topology_name(topology):
+    if topology == "y":
+        return "Y-shape"
+    return str(topology)
+
+
 def generate_jetson_sets(nicknames, seed=None):
     """
     Rules:
@@ -182,19 +205,35 @@ def generate_jetson_sets(nicknames, seed=None):
 def get_efficiency_limit(topology, num_agents):
     if topology == "circle":
         return CIRCLE_EFFICIENCY_LIMIT_BY_AGENTS.get(num_agents, 8)
+    if topology in ("chain", "y"):
+        return 10
     return EFFICIENCY_MAX_ROUNDS_BY_AGENTS.get(num_agents, 4)
 
 
 def get_hard_stop_round(topology, num_agents):
     if topology == "circle":
         return CIRCLE_HARD_STOP_BY_AGENTS.get(num_agents, MAX_ROUNDS_PER_TRIAL)
+    if topology in ("chain", "y"):
+        return MAX_ROUNDS_PER_TRIAL
     return MAX_ROUNDS_PER_TRIAL
 
 
 def get_answer_allowed_from_round(topology, num_agents):
     if topology == "circle":
-        return CIRCLE_ANSWER_ALLOWED_FROM_ROUND_BY_AGENTS.get(num_agents, 3)
-    return 3
+        return DEFAULT_CIRCLE_DISCUSSION_ROUNDS + 1
+    if topology == "chain":
+        return DEFAULT_CHAIN_DISCUSSION_ROUNDS + 1
+    if topology == "y":
+        return DEFAULT_Y_DISCUSSION_ROUNDS + 1
+    return 4
+
+
+def normalize_discussion_rounds(value, default=DEFAULT_CIRCLE_DISCUSSION_ROUNDS):
+    try:
+        rounds = int(value)
+    except (TypeError, ValueError):
+        rounds = default
+    return max(0, min(MAX_ROUNDS_PER_TRIAL, rounds))
 
 
 def evaluate_efficiency(found, has_answer, rounds_used, num_agents, topology):
@@ -282,6 +321,13 @@ class LeavittServer:
         self.answers = {}
         self.circle_neighbors_by_name = {}
         self.circle_last_target_by_speaker = {}
+        self.circle_discussion_rounds = normalize_discussion_rounds(None)
+        self.chain_contacts_by_name = {}
+        self.chain_last_target_by_speaker = {}
+        self.chain_discussion_rounds = normalize_discussion_rounds(None, DEFAULT_CHAIN_DISCUSSION_ROUNDS)
+        self.y_contacts_by_name = {}
+        self.y_last_target_by_speaker = {}
+        self.y_discussion_rounds = normalize_discussion_rounds(None, DEFAULT_Y_DISCUSSION_ROUNDS)
 
         self.start_time = None
         self.end_time = None
@@ -407,6 +453,12 @@ class LeavittServer:
     def _recent_circle_messages(self, agent_id):
         return list(self.agent_histories.get(agent_id, [])[-5:])
 
+    def _recent_chain_messages(self, agent_id):
+        return list(self.agent_histories.get(agent_id, [])[-5:])
+
+    def _recent_y_messages(self, agent_id):
+        return list(self.agent_histories.get(agent_id, [])[-5:])
+
     def _preferred_circle_neighbor(self, speaker):
         neighbors = self.circle_neighbors_by_name.get(speaker, [])
         if not neighbors:
@@ -420,6 +472,34 @@ class LeavittServer:
                 return display_agent_name(neighbor)
 
         return display_agent_name(neighbors[0])
+
+    def _preferred_chain_contact(self, speaker):
+        contacts = self.chain_contacts_by_name.get(speaker, [])
+        if not contacts:
+            return ""
+        if len(contacts) == 1:
+            return display_agent_name(contacts[0])
+
+        last_target = self.chain_last_target_by_speaker.get(speaker)
+        for contact in contacts:
+            if contact != last_target:
+                return display_agent_name(contact)
+
+        return display_agent_name(contacts[0])
+
+    def _preferred_y_contact(self, speaker):
+        contacts = self.y_contacts_by_name.get(speaker, [])
+        if not contacts:
+            return ""
+        if len(contacts) == 1:
+            return display_agent_name(contacts[0])
+
+        last_target = self.y_last_target_by_speaker.get(speaker)
+        for contact in contacts:
+            if contact != last_target:
+                return display_agent_name(contact)
+
+        return display_agent_name(contacts[0])
 
     def handle_new_client(self, client_socket, client_address):
         try:
@@ -521,7 +601,7 @@ class LeavittServer:
             should_print = False
             done = False
             with self.lock:
-                if self.topology == "circle":
+                if self.topology in ("circle", "chain", "y"):
                     required = {}
                     for sock in list(self.turn_order):
                         info = self.clients.get(sock)
@@ -614,6 +694,31 @@ class LeavittServer:
             neighbors_by_name[name] = neighbors
         return neighbors_by_name
 
+    def _build_chain_contacts(self, active_socks):
+        ordered_names = self._circle_agent_order(active_socks)
+        contacts_by_name = {}
+        total = len(ordered_names)
+        for index, name in enumerate(ordered_names):
+            contacts = []
+            if index > 0:
+                contacts.append(ordered_names[index - 1])
+            if index < total - 1:
+                contacts.append(ordered_names[index + 1])
+            contacts_by_name[name] = contacts
+        return contacts_by_name
+
+    def _build_y_contacts(self, active_socks):
+        active_names = set(self._active_agent_names(active_socks))
+        contacts_by_name = {}
+        for name in active_names:
+            agent_id = get_agent_id(name)
+            contacts_by_name[name] = [
+                f"jetson{contact_id}"
+                for contact_id in get_y_contacts(agent_id)
+                if f"jetson{contact_id}" in active_names
+            ]
+        return contacts_by_name
+
     def _sock_by_name(self, active_socks, name):
         with self.lock:
             for sock in active_socks:
@@ -629,6 +734,7 @@ class LeavittServer:
                 "topology": "circle",
                 "round": round_number,
                 "can_answer": can_answer,
+                "discussion_rounds": self.circle_discussion_rounds,
                 "agent_name": display_agent_name(speaker),
                 "your_symbols": self.cards[speaker],
                 "circle_neighbors": [
@@ -637,6 +743,38 @@ class LeavittServer:
                 ],
                 "recent_messages": self._recent_circle_messages(speaker_id),
                 "preferred_neighbor": self._preferred_circle_neighbor(speaker),
+            })
+        elif self.topology == "chain":
+            self._send(sock, {
+                "type": "your_turn",
+                "topology": "chain",
+                "round": round_number,
+                "can_answer": can_answer,
+                "discussion_rounds": self.chain_discussion_rounds,
+                "agent_name": display_agent_name(speaker),
+                "your_symbols": self.cards[speaker],
+                "chain_contacts": [
+                    display_agent_name(contact)
+                    for contact in self.chain_contacts_by_name.get(speaker, [])
+                ],
+                "recent_messages": self._recent_chain_messages(speaker_id),
+                "preferred_contact": self._preferred_chain_contact(speaker),
+            })
+        elif self.topology == "y":
+            self._send(sock, {
+                "type": "your_turn",
+                "topology": "y",
+                "round": round_number,
+                "can_answer": can_answer,
+                "discussion_rounds": self.y_discussion_rounds,
+                "agent_name": display_agent_name(speaker),
+                "your_symbols": self.cards[speaker],
+                "y_contacts": [
+                    display_agent_name(contact)
+                    for contact in self.y_contacts_by_name.get(speaker, [])
+                ],
+                "recent_messages": self._recent_y_messages(speaker_id),
+                "preferred_contact": self._preferred_y_contact(speaker),
             })
         else:
             self._send(sock, {
@@ -657,6 +795,8 @@ class LeavittServer:
         turn_number,
         target=None,
         raw="",
+        target_source="",
+        original_target="",
     ):
         self.message_count += 1
 
@@ -711,6 +851,184 @@ class LeavittServer:
 
             if receiver_sock:
                 print(f"{display_agent_name(speaker)} -> {display_agent_name(receiver)}: {text}")
+        elif self.topology == "chain":
+            valid_contacts = self.chain_contacts_by_name.get(speaker, [])
+            original_target = original_target or target or ""
+            receiver = internal_agent_name(target) if target else ""
+            routing_note = ""
+
+            if not valid_contacts:
+                self.conversation_log.append({
+                    "round": round_number,
+                    "topology": "chain",
+                    "sender": display_agent_name(speaker),
+                    "receiver": None,
+                    "valid_contacts": [display_agent_name(name) for name in valid_contacts],
+                    "raw": raw,
+                    "message": text,
+                    "target_source": target_source,
+                    "routing_note": "No valid chain contacts available. Message skipped.",
+                    "original_target": original_target,
+                })
+                print(f"[CHAIN ROUTE] {display_agent_name(speaker)} has no valid contacts. Message skipped.")
+                return
+
+            if target_source == "client_default" and receiver in valid_contacts:
+                routing_note = (
+                    f"{display_agent_name(speaker)} did not provide a valid target. "
+                    f"Client defaulted to {display_agent_name(receiver)}."
+                )
+            elif receiver in valid_contacts:
+                routing_note = f"{display_agent_name(speaker)} chose {display_agent_name(receiver)}."
+            else:
+                preferred = internal_agent_name(self._preferred_chain_contact(speaker))
+                if preferred not in valid_contacts:
+                    preferred = valid_contacts[0]
+                receiver = preferred
+                if target:
+                    routing_note = (
+                        f"{display_agent_name(speaker)} chose invalid target {target}. "
+                        f"Server assigned {display_agent_name(receiver)}."
+                    )
+                else:
+                    routing_note = (
+                        f"{display_agent_name(speaker)} target was missing or invalid. "
+                        f"Server assigned {display_agent_name(receiver)}."
+                    )
+
+            receiver_sock = self._sock_by_name(active_socks, receiver)
+            if receiver_sock and self._send(receiver_sock, {"type": "chat", "sender": display_agent_name(speaker), "text": text}):
+                self.chain_last_target_by_speaker[speaker] = receiver
+            else:
+                print(f"{display_agent_name(speaker)}: invalid target, skipped.")
+                self.conversation_log.append({
+                    "round": round_number,
+                    "topology": "chain",
+                    "sender": display_agent_name(speaker),
+                    "receiver": display_agent_name(receiver),
+                    "valid_contacts": [display_agent_name(name) for name in valid_contacts],
+                    "raw": raw,
+                    "message": text,
+                    "target_source": target_source,
+                    "routing_note": routing_note,
+                    "original_target": original_target,
+                })
+                return
+
+            receiver_id = get_agent_id(receiver)
+            if receiver_id is not None:
+                self.agent_histories.setdefault(receiver_id, []).append({
+                    "sender": display_agent_name(speaker),
+                    "text": text,
+                })
+
+            display_message = f"{display_agent_name(speaker)} -> {display_agent_name(receiver)}: {text}"
+            self.conversation_log.append({
+                "round": round_number,
+                "topology": "chain",
+                "sender": display_agent_name(speaker),
+                "receiver": display_agent_name(receiver),
+                "valid_contacts": [display_agent_name(name) for name in valid_contacts],
+                "raw": raw,
+                "message": text,
+                "target_source": target_source,
+                "routing_note": routing_note,
+                "original_target": original_target,
+                "display": display_message,
+            })
+
+            if receiver_sock:
+                print(f"[CHAIN ROUTE] {routing_note}")
+                print(display_message)
+        elif self.topology == "y":
+            valid_contacts = self.y_contacts_by_name.get(speaker, [])
+            original_target = original_target or target or ""
+            receiver = internal_agent_name(target) if target else ""
+            routing_note = ""
+
+            if not valid_contacts:
+                self.conversation_log.append({
+                    "round": round_number,
+                    "topology": "y",
+                    "sender": display_agent_name(speaker),
+                    "receiver": None,
+                    "valid_contacts": [display_agent_name(name) for name in valid_contacts],
+                    "raw": raw,
+                    "message": text,
+                    "target_source": target_source,
+                    "routing_note": "No valid Y contacts available. Message skipped.",
+                    "original_target": original_target,
+                })
+                print(f"[Y ROUTE] {display_agent_name(speaker)} has no valid contacts. Message skipped.")
+                return
+
+            if target_source == "client_default" and receiver in valid_contacts:
+                routing_note = (
+                    f"{display_agent_name(speaker)} did not provide a valid target. "
+                    f"Client defaulted to {display_agent_name(receiver)}."
+                )
+            elif receiver in valid_contacts:
+                routing_note = f"{display_agent_name(speaker)} chose {display_agent_name(receiver)}."
+            else:
+                preferred = internal_agent_name(self._preferred_y_contact(speaker))
+                if preferred not in valid_contacts:
+                    preferred = valid_contacts[0]
+                receiver = preferred
+                if target:
+                    routing_note = (
+                        f"{display_agent_name(speaker)} chose invalid target {target}. "
+                        f"Server assigned {display_agent_name(receiver)}."
+                    )
+                else:
+                    routing_note = (
+                        f"{display_agent_name(speaker)} target was missing or invalid. "
+                        f"Server assigned {display_agent_name(receiver)}."
+                    )
+
+            receiver_sock = self._sock_by_name(active_socks, receiver)
+            if receiver_sock and self._send(receiver_sock, {"type": "chat", "sender": display_agent_name(speaker), "text": text}):
+                self.y_last_target_by_speaker[speaker] = receiver
+            else:
+                print(f"{display_agent_name(speaker)}: invalid target, skipped.")
+                self.conversation_log.append({
+                    "round": round_number,
+                    "topology": "y",
+                    "sender": display_agent_name(speaker),
+                    "receiver": display_agent_name(receiver),
+                    "valid_contacts": [display_agent_name(name) for name in valid_contacts],
+                    "raw": raw,
+                    "message": text,
+                    "target_source": target_source,
+                    "routing_note": routing_note,
+                    "original_target": original_target,
+                })
+                return
+
+            receiver_id = get_agent_id(receiver)
+            if receiver_id is not None:
+                self.agent_histories.setdefault(receiver_id, []).append({
+                    "sender": display_agent_name(speaker),
+                    "text": text,
+                })
+
+            display_message = f"{display_agent_name(speaker)} -> {display_agent_name(receiver)}: {text}"
+            self.conversation_log.append({
+                "round": round_number,
+                "topology": "y",
+                "sender": display_agent_name(speaker),
+                "receiver": display_agent_name(receiver),
+                "valid_contacts": [display_agent_name(name) for name in valid_contacts],
+                "raw": raw,
+                "message": text,
+                "target_source": target_source,
+                "routing_note": routing_note,
+                "original_target": original_target,
+                "display": display_message,
+            })
+
+            if receiver_sock:
+                print(f"[Y ROUTE] {routing_note}")
+                print(display_message)
         else:
             self.conversation_log.append({
                 "round": round_number,
@@ -733,7 +1051,25 @@ class LeavittServer:
         self.accepting_connections = False
         if self.topology == "circle":
             self.num_agents = 5
+            self.circle_discussion_rounds = normalize_discussion_rounds(self.circle_discussion_rounds)
             print("[START] Circle mode uses 5 Jetsons.")
+            print(f"[START] Circle discussion-only rounds: {self.circle_discussion_rounds}.")
+        elif self.topology == "chain":
+            self.num_agents = 5
+            self.chain_discussion_rounds = normalize_discussion_rounds(
+                self.chain_discussion_rounds,
+                DEFAULT_CHAIN_DISCUSSION_ROUNDS,
+            )
+            print("[START] Chain mode uses 5 Jetsons.")
+            print(f"[START] Chain discussion-only rounds: {self.chain_discussion_rounds}.")
+        elif self.topology == "y":
+            self.num_agents = 5
+            self.y_discussion_rounds = normalize_discussion_rounds(
+                self.y_discussion_rounds,
+                DEFAULT_Y_DISCUSSION_ROUNDS,
+            )
+            print("[START] Y-shape mode uses 5 Jetsons.")
+            print(f"[START] Y-shape discussion-only rounds: {self.y_discussion_rounds}.")
         else:
             self.num_agents = self._prompt_num_agents()
         self.required_for_trial = self.num_agents
@@ -754,9 +1090,21 @@ class LeavittServer:
         self.conversation_log = []
         self.agent_histories = {agent_id: [] for agent_id in range(1, self.num_agents + 1)}
         self.circle_last_target_by_speaker = {}
+        self.chain_last_target_by_speaker = {}
+        self.y_last_target_by_speaker = {}
         self.circle_neighbors_by_name = (
             self._build_circle_neighbors(active_socks)
             if self.topology == "circle"
+            else {}
+        )
+        self.chain_contacts_by_name = (
+            self._build_chain_contacts(active_socks)
+            if self.topology == "chain"
+            else {}
+        )
+        self.y_contacts_by_name = (
+            self._build_y_contacts(active_socks)
+            if self.topology == "y"
             else {}
         )
         self.turn_index = 0
@@ -769,7 +1117,7 @@ class LeavittServer:
 
         print(f"\n{'=' * 55}")
         print("  EXPERIMENT STARTING")
-        print(f"  Communication topology: {self.topology.upper()}")
+        print(f"  Communication topology: {display_topology_name(self.topology)}")
         print(f"  Jetsons: {self.num_agents}")
         print(f"  Figure pool size: {self.pool_size}")
         print(f"  Figures per card: {self.figures_per_card}")
@@ -783,6 +1131,18 @@ class LeavittServer:
                 neighbors = self.circle_neighbors_by_name.get(name, [])
                 display_neighbors = ", ".join(display_agent_name(neighbor) for neighbor in neighbors)
                 print(f"  {display_agent_name(name)}: {display_neighbors}")
+        if self.topology == "chain":
+            print("  Chain contacts:")
+            for name in selected_internal_order:
+                contacts = self.chain_contacts_by_name.get(name, [])
+                display_contacts = ", ".join(display_agent_name(contact) for contact in contacts)
+                print(f"  {display_agent_name(name)}: {display_contacts}")
+        if self.topology == "y":
+            print("  Y-shape contacts:")
+            for name in selected_internal_order:
+                contacts = self.y_contacts_by_name.get(name, [])
+                display_contacts = ", ".join(display_agent_name(contact) for contact in contacts)
+                print(f"  {display_agent_name(name)}: {display_contacts}")
         if DEBUG:
             print(f"  Selected internal order: {', '.join(selected_internal_order)}")
         print(f"{'=' * 55}\n")
@@ -797,9 +1157,23 @@ class LeavittServer:
                 "figures_per_card": self.figures_per_card,
                 "pool_size": self.pool_size,
                 "topology": self.topology,
+                "discussion_rounds": (
+                    self.circle_discussion_rounds
+                    if self.topology == "circle"
+                    else self.chain_discussion_rounds if self.topology == "chain"
+                    else self.y_discussion_rounds if self.topology == "y" else None
+                ),
                 "circle_neighbors": [
                     display_agent_name(neighbor)
                     for neighbor in self.circle_neighbors_by_name.get(name, [])
+                ],
+                "chain_contacts": [
+                    display_agent_name(contact)
+                    for contact in self.chain_contacts_by_name.get(name, [])
+                ],
+                "y_contacts": [
+                    display_agent_name(contact)
+                    for contact in self.y_contacts_by_name.get(name, [])
                 ],
             })
 
@@ -814,6 +1188,14 @@ class LeavittServer:
         max_rounds_reason = None
         hard_stop_round = get_hard_stop_round(self.topology, self.num_agents)
         answer_allowed_from_round = get_answer_allowed_from_round(self.topology, self.num_agents)
+        if self.topology == "circle":
+            discussion_rounds = self.circle_discussion_rounds
+        elif self.topology == "chain":
+            discussion_rounds = self.chain_discussion_rounds
+        elif self.topology == "y":
+            discussion_rounds = self.y_discussion_rounds
+        else:
+            discussion_rounds = None
 
         while self.running and not trial_finished:
             if round_number > hard_stop_round:
@@ -849,8 +1231,8 @@ class LeavittServer:
                 )
 
                 can_answer = (
-                    round_number > 6
-                    if self.topology == "circle"
+                    round_number > discussion_rounds
+                    if self.topology in ("circle", "chain", "y")
                     else round_number >= answer_allowed_from_round
                 )
                 self._send_turn_request(current_sock, speaker_id, speaker, round_number, can_answer)
@@ -874,8 +1256,10 @@ class LeavittServer:
                     text = resp.get("text", "")
                     raw = resp.get("raw", "")
                     target = resp.get("target")
+                    target_source = resp.get("target_source", "")
+                    original_target = resp.get("original_target", "")
                     if DEBUG:
-                        print(f"[RECV] {display_agent_name(speaker)}: type=chat target={target} text={text!r} raw={raw!r}")
+                        print(f"[RECV] {display_agent_name(speaker)}: type=chat target={target} target_source={target_source} text={text!r} raw={raw!r}")
 
                     if not text and raw:
                         if DEBUG:
@@ -885,7 +1269,7 @@ class LeavittServer:
                         text = raw
 
                     if not text:
-                        if self.topology == "circle":
+                        if self.topology in ("circle", "chain", "y"):
                             print(f"{display_agent_name(speaker)}: invalid target, skipped.")
                         elif DEBUG:
                             print(f"[WARN] {display_agent_name(speaker)} returned empty chat and empty raw response.")
@@ -901,6 +1285,8 @@ class LeavittServer:
                             turn_count + 1,
                             target=target,
                             raw=raw,
+                            target_source=target_source,
+                            original_target=original_target,
                         )
 
                 elif resp.get("type") == "answer":
@@ -1051,7 +1437,7 @@ class LeavittServer:
             print("  Leavitt Experiment Server")
             print(f"  Listening on {self.host}:{self.port}")
             print(f"  Trial Jetsons range: {MIN_PARTICIPANTS}-{MAX_PARTICIPANTS}")
-            print(f"  Topology: {self.topology}")
+            print(f"  Topology: {display_topology_name(self.topology)}")
             print("  Turn mode: round-based")
             print(f"{'=' * 55}\n")
 
@@ -1069,7 +1455,7 @@ class LeavittServer:
                         continue
                     if choice in ("m", "mode", "change"):
                         self.topology = prompt_topology()
-                        print(f"[MODE] Topology changed to: {self.topology}")
+                        print(f"[MODE] Topology changed to: {display_topology_name(self.topology)}")
                         break
                     if choice in ("e", "exit"):
                         self.running = False
@@ -1105,12 +1491,16 @@ class LeavittServer:
 
 def prompt_topology():
     while True:
-        choice = input("Select topology (b=broadcast, c=circle): ").strip().lower()
+        choice = input("Select topology (b=broadcast, c=circle, h=chain, y=y-shape): ").strip().lower()
         if choice in ("b", "broadcast"):
             return "broadcast"
         if choice in ("c", "circle"):
             return "circle"
-        print("[INPUT] Please type 'b' for broadcast or 'c' for circle.")
+        if choice in ("h", "chain"):
+            return "chain"
+        if choice in ("y", "y-shape", "yshape"):
+            return "y"
+        print("[INPUT] Please type 'b' for broadcast, 'c' for circle, 'h' for chain, or 'y' for y-shape.")
 
 
 if __name__ == "__main__":

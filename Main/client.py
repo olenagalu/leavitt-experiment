@@ -5,16 +5,19 @@ LEAVITT - CLIENT
 # imports
 import socket
 import json
+import os
 import sys
 import time
 import requests
 import platform
 from circle_client import build_circle_prompt, parse_circle_response
+from chain_client import build_chain_prompt, parse_chain_response
+from y_client import build_y_prompt, parse_y_response
 
 # ====================================================================== CONFIG
 OLLAMA_URL = "http://127.0.0.1:11434"
 MODEL_NAME = "gemma3:4b"
-OLLAMA_TEMPERATURE = 0.0
+OLLAMA_TEMPERATURE = 0.2
 OLLAMA_TOP_P = 0.7              # fewer weird word choices, the smaller number -> more repetetive but less words
 OLLAMA_REPEAT_PENALTY = 1.3     # less looping/repeating
 OLLAMA_NUM_PREDICT = 70         # limits response length
@@ -56,6 +59,13 @@ def generate_agent_reply(
     server_prompt=None,
     circle_recent_messages=None,
     preferred_neighbor=None,
+    discussion_rounds=None,
+    chain_contacts=None,
+    chain_recent_messages=None,
+    preferred_chain_contact=None,
+    y_contacts=None,
+    y_recent_messages=None,
+    preferred_y_contact=None,
 ):
     """
     Ask model to discuss possible common symbols or answer when allowed.
@@ -66,6 +76,8 @@ def generate_agent_reply(
     symbols_str = "  ".join(my_symbols)
     figures_list = ", ".join(my_symbols)
     circle_neighbors = circle_neighbors or []
+    chain_contacts = chain_contacts or []
+    y_contacts = y_contacts or []
 
     num_agents = max(2, min(5, int(num_agents)))
 
@@ -85,6 +97,43 @@ def generate_agent_reply(
             preferred_neighbor,
             already_shared_full_list,
             last_own_message,
+            discussion_rounds,
+        )
+    elif topology == "chain":
+        system_prompt = "You are a participant in the figure-matching experiment. Follow the user's instructions exactly."
+        chain_history = chain_recent_messages if chain_recent_messages is not None else conversation_history
+        last_own_message = get_last_own_message(agent_name, conversation_history)
+        already_shared_full_list = has_shared_figures(agent_name, conversation_history, my_symbols)
+        user_prompt = build_chain_prompt(
+            agent_name,
+            my_symbols,
+            chain_history,
+            num_agents,
+            current_round,
+            can_answer,
+            chain_contacts,
+            preferred_chain_contact,
+            already_shared_full_list,
+            last_own_message,
+            discussion_rounds,
+        )
+    elif topology == "y":
+        system_prompt = "You are a participant in the figure-matching experiment. Follow the user's instructions exactly."
+        y_history = y_recent_messages if y_recent_messages is not None else conversation_history
+        last_own_message = get_last_own_message(agent_name, conversation_history)
+        already_shared_full_list = has_shared_figures(agent_name, conversation_history, my_symbols)
+        user_prompt = build_y_prompt(
+            agent_name,
+            my_symbols,
+            y_history,
+            num_agents,
+            current_round,
+            can_answer,
+            y_contacts,
+            preferred_y_contact,
+            already_shared_full_list,
+            last_own_message,
+            discussion_rounds,
         )
     else:
         system_prompt = f"""
@@ -102,8 +151,10 @@ Rules:
 - If no figure has been proposed, propose one possible common figure only if it is in your list and appears in another agent's message.
 - Confirm another proposal only if that figure is in your list.
 - Reject another proposal if that figure is not in your list.
-- Rounds 1 and 2 are discussion only. Do not submit a final answer in those rounds.
-- In round 3 and later, you may submit a final answer if you believe the group has enough evidence.
+- Rounds 1, 2, and 3 are discussion only. Do not submit a final answer in those rounds.
+- Round 4 and later is answer-allowed mode. You may either continue discussion or submit a final answer.
+- Submit a final answer only if one figure is clearly supported by the messages.
+- If unsure, continue discussion.
 - Keep the message short.
 - Do not repeat your previous message.
 - Stay only inside the figure task.
@@ -121,12 +172,14 @@ square, circle, triangle, diamond, cross, asterisk
         last_own_message = get_last_own_message(agent_name, conversation_history)
         shared_figures = "yes" if has_shared_figures(agent_name, conversation_history, my_symbols) else "no"
 
+        turn_mode = "answer" if can_answer else "discussion"
+
         user_prompt = f"""
 CURRENT STATE:
 - You are: {agent_name}
 - Total agents: {num_agents}
 - Current round: {current_round}
-- Final answer allowed now: {"yes" if can_answer else "no"}
+- Turn mode: {turn_mode}
 - Your figures: {figures_list}
 - You already shared your figures: {shared_figures}
 - Your previous message: {last_own_message}
@@ -142,8 +195,10 @@ RECENT PUBLIC MESSAGES:
         if can_answer:
             user_prompt += """
 YOUR TURN:
-This is the answer stage.
-You may continue discussion or submit a final answer if you believe the group has enough evidence.
+Final answer is allowed now, but not required.
+
+If one figure is clearly supported, submit it as the final answer.
+If evidence is still missing or more than one figure is possible, continue discussion.
 
 Use one of:
 
@@ -158,14 +213,16 @@ WORD: <figure>
         else:
             user_prompt += """
 YOUR TURN:
-This is the discussion stage.
-You are not allowed to submit a final answer yet.
-Continue discussion: share figures, compare overlap, propose, confirm, or reject.
+This is discussion mode.
+You must continue the discussion.
+Do not submit a final answer yet.
+
+Share useful information, compare figure lists, respond to questions, confirm or reject possible candidates, and narrow the possible common figure.
 
 Use only:
 
 ACTION: CHAT
-MESSAGE: <your message>
+MESSAGE: <short message>
 """
 
     # Non-streaming generation keeps parsing logic simple and deterministic.
@@ -200,6 +257,10 @@ MESSAGE: <your message>
     # ---- Parse the model's structured response ----
     if topology == "circle":
         return parse_circle_response(raw, agent_name, circle_neighbors)
+    if topology == "chain":
+        return parse_chain_response(raw, agent_name, chain_contacts)
+    if topology == "y":
+        return parse_y_response(raw, agent_name, y_contacts)
     return classify_agent_response(raw)
 
 
@@ -264,6 +325,16 @@ def recv_json_line(sock, recv_buffer):
     return json.loads(line.decode("utf-8")), recv_buffer
 
 
+def restart_process(sock=None):
+    print("[RESTART] Restart requested by dashboard. Restarting client process...", flush=True)
+    if sock is not None:
+        try:
+            sock.close()
+        except Exception:
+            pass
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+
+
 def main():
     ok, msg = check_ollama()
     if not ok:
@@ -305,6 +376,8 @@ def main():
             num_agents = 2
             topology = "broadcast"
             circle_neighbors = []
+            chain_contacts = []
+            y_contacts = []
             recv_buffer = b""
 
             while True:
@@ -329,24 +402,33 @@ def main():
                         agent_name = assigned_name
                         print(f"[SERVER] Assigned name: {agent_name}")
 
+                elif msg_type == "restart_client":
+                    restart_process(sock)
+
                 elif msg_type == "experiment_start":
                     agent_name = msg["agent_name"]
                     my_symbols = msg["your_symbols"]
                     num_agents = msg.get("num_agents", num_agents)
                     topology = msg.get("topology", "broadcast")
                     circle_neighbors = msg.get("circle_neighbors", [])
+                    chain_contacts = msg.get("chain_contacts", msg.get("chain_neighbors", []))
+                    y_contacts = msg.get("y_contacts", [])
                     print(f"\n[START] I am {agent_name}")
                     print(f"[START] My figures: {my_symbols}")
                     print(f"[START] Number of agents: {num_agents}")
                     print(f"[START] Topology: {topology}")
                     if topology == "circle":
                         print(f"[START] Circle neighbors: {circle_neighbors}")
+                    if topology == "chain":
+                        print(f"[START] Chain contacts: {chain_contacts}")
+                    if topology == "y":
+                        print(f"[START] Y contacts: {y_contacts}")
                     conversation_history = []
 
                 elif msg_type == "system":
                     text = msg.get("text", "")
                     print(f"[SYSTEM] {text}")
-                    if topology != "circle":
+                    if topology not in ("circle", "chain", "y"):
                         conversation_history.append({"sender": "SYSTEM", "text": text})
 
                 elif msg_type == "chat":
@@ -363,13 +445,55 @@ def main():
 
                     turn_topology = msg.get("topology", topology)
                     circle_recent_messages = None
+                    chain_recent_messages = None
+                    y_recent_messages = None
                     preferred_neighbor = ""
+                    preferred_chain_contact = ""
+                    preferred_y_contact = ""
                     if turn_topology == "circle":
                         agent_name = msg.get("agent_name", agent_name)
                         my_symbols = msg.get("your_symbols", my_symbols)
                         circle_neighbors = msg.get("circle_neighbors", circle_neighbors)
                         circle_recent_messages = msg.get("recent_messages", [])
                         preferred_neighbor = msg.get("preferred_neighbor", "")
+                        discussion_rounds = msg.get("discussion_rounds")
+                        if discussion_rounds is None:
+                            answer_allowed_from_round = msg.get("answer_allowed_from_round")
+                            if answer_allowed_from_round is not None:
+                                try:
+                                    discussion_rounds = max(0, int(answer_allowed_from_round) - 1)
+                                except (TypeError, ValueError):
+                                    discussion_rounds = None
+                    elif turn_topology == "chain":
+                        agent_name = msg.get("agent_name", agent_name)
+                        my_symbols = msg.get("your_symbols", my_symbols)
+                        chain_contacts = msg.get("chain_contacts", msg.get("chain_neighbors", chain_contacts))
+                        chain_recent_messages = msg.get("recent_messages", [])
+                        preferred_chain_contact = msg.get("preferred_contact", msg.get("preferred_neighbor", ""))
+                        discussion_rounds = msg.get("discussion_rounds")
+                        if discussion_rounds is None:
+                            answer_allowed_from_round = msg.get("answer_allowed_from_round")
+                            if answer_allowed_from_round is not None:
+                                try:
+                                    discussion_rounds = max(0, int(answer_allowed_from_round) - 1)
+                                except (TypeError, ValueError):
+                                    discussion_rounds = None
+                    elif turn_topology == "y":
+                        agent_name = msg.get("agent_name", agent_name)
+                        my_symbols = msg.get("your_symbols", my_symbols)
+                        y_contacts = msg.get("y_contacts", y_contacts)
+                        y_recent_messages = msg.get("recent_messages", [])
+                        preferred_y_contact = msg.get("preferred_contact", msg.get("preferred_neighbor", ""))
+                        discussion_rounds = msg.get("discussion_rounds")
+                        if discussion_rounds is None:
+                            answer_allowed_from_round = msg.get("answer_allowed_from_round")
+                            if answer_allowed_from_round is not None:
+                                try:
+                                    discussion_rounds = max(0, int(answer_allowed_from_round) - 1)
+                                except (TypeError, ValueError):
+                                    discussion_rounds = None
+                    else:
+                        discussion_rounds = None
 
                     current_round = msg.get("round", 1)
                     can_answer = bool(msg.get("can_answer", False))
@@ -386,6 +510,13 @@ def main():
                         server_prompt,
                         circle_recent_messages,
                         preferred_neighbor,
+                        discussion_rounds,
+                        chain_contacts,
+                        chain_recent_messages,
+                        preferred_chain_contact,
+                        y_contacts,
+                        y_recent_messages,
+                        preferred_y_contact,
                     )
 
                     if decision.get("action") == "answer":
@@ -396,17 +527,30 @@ def main():
                     else:
                         raw = decision.get("raw", "")
                         text = decision.get("text", "")
-                        print(f"[SEND CHAT] {text}")
+                        if turn_topology in ("chain", "y"):
+                            target = decision.get("target", "")
+                            print(f"{agent_name} -> {target}: {text}")
+                        else:
+                            print(f"[SEND CHAT] {text}")
                         payload = {"type": "chat", "text": text, "raw": raw}
-                        if turn_topology == "circle":
+                        if turn_topology in ("circle", "chain", "y"):
                             payload["target"] = decision.get("target", "")
+                        if turn_topology in ("chain", "y"):
+                            payload["target_source"] = decision.get("target_source", "")
+                            payload["original_target"] = decision.get("original_target", "")
                         conversation_history.append({"sender": agent_name, "text": text})
                         send_json(sock, payload)
 
                 elif msg_type in ("result", "experiment_end"):
                     print("\n[RESULT]")
                     print(json.dumps(msg, indent=2))
-                    break
+                    conversation_history = []
+                    my_symbols = []
+                    circle_neighbors = []
+                    chain_contacts = []
+                    y_contacts = []
+                    print("[SERVER] Waiting for next trial start...")
+                    continue
 
                 else:
                     print(f"[UNKNOWN MESSAGE] {msg}")

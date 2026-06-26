@@ -53,10 +53,11 @@ def build_y_prompt(
     except (TypeError, ValueError):
         round_number = 1
     full_list_rule = (
-        "* Share your full figure list with one valid recipient.\n"
+        "* First, share your full figure list with one valid recipient.\n"
         if round_number <= 1
-        else "* Do not repeat your full figure list unless it is useful.\n"
+        else ""
     )
+    normalized_agent = normalize_agent_name(agent_name)
 
     history_text = ""
     for msg in conversation_history[-5:]:
@@ -103,8 +104,9 @@ TO: {recipient_choices_text}
 MESSAGE: <short message>
 """
 
-    return f"""
-You are {agent_name}, one of {num_agents} agents in a figure-matching experiment.
+    if normalized_agent == "Agent3":
+        role_prompt = f"""
+You are Agent3, the junction agent in a Y topology.
 
 Your figures:
 {symbols_str}
@@ -112,30 +114,118 @@ Your figures:
 Goal:
 Find the one figure shared by all agents.
 
-Y topology:
+Your valid recipients:
+{recipients_text}
 
-* You are one of 5 agents connected in a Y-shape structure.
-* You can send one private message per turn.
-* You may send it only to one of these valid recipients: {recipients_text}.
-* Only the selected recipient will see your message.
-* You must choose the recipient yourself before writing the message.
-* You must choose exactly one valid recipient.
-* If you have two or more valid recipients, choose the one who most needs the information or the suggested recipient.
-* If you have one valid recipient, communicate with that recipient.
-* If you receive useful information from one valid recipient, pass it to another valid recipient when helpful.
+You can talk to Agent1, Agent2, and Agent4.
+Agent1 and Agent2 can only reach the group through you.
+Agent5 can only be reached through Agent4.
+You must help useful information move between the branches.
 
 Rules:
-* First, select exactly one valid recipient from the valid-recipient list.
-* After selecting the recipient, write the message for that recipient.
-* Always put the selected recipient on the TO line before the MESSAGE line.
-* Use only your figures and received messages.
+* Send one private message per turn.
+* Choose exactly one valid recipient before writing the message.
+* Choose the recipient who most needs the information or the suggested recipient.
+* Use only your figures and messages you received.
 {full_list_rule}
-* Answer questions from other agents.
-* Compare figures and pass useful matches, non-matches, possible overlaps, or candidate figures.
-* Propose, confirm, or reject a figure only if it is in your own list.
+* Compare information from different branches.
+* Pass useful matches, rejected figures, and possible candidates between branches.
+* As the conversation continues, narrow the possible common figures.
+* You may propose a possible common figure only if it is in your own list and appears in information received from another agent.
+* Confirm another proposal only if that figure is in your own list.
+* Reject another proposal if that figure is not in your own list.
 * Do not guess.
 * Do not repeat your previous message.
-* Keep messages short.
+"""
+    elif normalized_agent == "Agent4":
+        role_prompt = f"""
+You are Agent4, the bridge agent in a Y topology.
+
+Your figures:
+{symbols_str}
+
+Goal:
+Find the one figure shared by all agents.
+
+Your valid recipients:
+{recipients_text}
+
+You can talk to Agent3 and Agent5.
+Agent5 can only reach the group through you.
+You should help useful information move between Agent3 and Agent5.
+
+Rules:
+* Send one private message per turn.
+* Choose exactly one valid recipient before writing the message.
+* Choose the recipient who most needs the information or the suggested recipient.
+* Use only your figures and messages you received.
+{full_list_rule}
+* Compare information from Agent3 and Agent5.
+* Pass useful matches, rejected figures, and possible candidates between Agent3 and Agent5.
+* As the conversation continues, narrow the possible common figures.
+* You may propose a possible common figure only if it is in your own list and appears in information received from another agent.
+* Confirm another proposal only if that figure is in your own list.
+* Reject another proposal if that figure is not in your own list.
+* Do not guess.
+* Do not repeat your previous message.
+"""
+    elif len(y_contacts) == 1:
+        role_prompt = f"""
+You are {agent_name}, an endpoint agent in a Y topology.
+
+Your figures:
+{symbols_str}
+
+Goal:
+Find the one figure shared by all agents.
+
+Your only valid recipient:
+{recipients_text}
+
+You can talk only to {recipients_text}.
+You cannot talk directly to other agents.
+Information from the rest of the group must come through your valid recipient.
+
+Rules:
+* Send one private message per turn.
+* Send your message only to {recipients_text}.
+* Use only your figures and messages you received.
+{full_list_rule}
+* Compare your figures with received information.
+* Share useful matches, rejected figures, and possible candidates.
+* As the conversation continues, narrow the possible common figures.
+* You may propose a possible common figure only if it is in your own list and appears in information received from another agent.
+* Confirm another proposal only if that figure is in your own list.
+* Reject another proposal if that figure is not in your own list.
+* Do not guess.
+* Do not repeat your previous message.
+"""
+    else:
+        role_prompt = f"""
+You are {agent_name}, an agent in a Y topology.
+
+Your figures:
+{symbols_str}
+
+Goal:
+Find the one figure shared by all agents.
+
+Your valid recipients:
+{recipients_text}
+
+Rules:
+* Send one private message per turn.
+* Choose exactly one valid recipient before writing the message.
+* Use only your figures and messages you received.
+{full_list_rule}
+* Share useful matches, rejected figures, and possible candidates.
+* As the conversation continues, narrow the possible common figures.
+* Do not guess.
+* Do not repeat your previous message.
+"""
+
+    return f"""
+{role_prompt}
 
 Timing:
 
@@ -145,7 +235,7 @@ Timing:
 * If unsure, continue discussion.
 
 Valid figures:
-square, circle, triangle, diamond, cross, asterisk
+Valid figures are only: square, circle, triangle, diamond, cross, asterisk.
 
 CURRENT STATE:
 

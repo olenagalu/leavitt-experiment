@@ -127,10 +127,9 @@ Rules:
 * Submit a final answer only if one figure is clearly supported by the messages.
 * If unsure, continue discussion.
 * Do not repeat your previous message.
-* Keep messages short.
 
 Valid figures:
-square, circle, triangle, diamond, cross, asterisk
+Valid figures are only: square, circle, triangle, diamond, cross, asterisk.
 
 CURRENT STATE:
 

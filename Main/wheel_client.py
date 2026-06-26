@@ -1,5 +1,5 @@
 """
-Chain-topology helpers for client.py.
+Wheel-topology helpers for client.py.
 
 This module is imported by client.py and is not intended to run directly.
 """
@@ -8,7 +8,7 @@ import re
 
 
 DEBUG = False
-DEFAULT_DISCUSSION_ROUNDS = 8
+DEFAULT_DISCUSSION_ROUNDS = 1
 
 
 def normalize_agent_name(name):
@@ -20,26 +20,38 @@ def normalize_agent_name(name):
     return stripped
 
 
-def build_chain_prompt(
+def get_wheel_recipients(agent_name):
+    recipients_by_agent = {
+        "Agent1": ["Agent5"],
+        "Agent2": ["Agent5"],
+        "Agent3": ["Agent5"],
+        "Agent4": ["Agent5"],
+        "Agent5": ["Agent1", "Agent2", "Agent3", "Agent4"],
+    }
+    return recipients_by_agent.get(normalize_agent_name(agent_name), [])
+
+
+def build_wheel_prompt(
     agent_name,
     my_symbols,
     conversation_history,
     num_agents,
     current_round,
     can_answer,
-    chain_contacts,
-    preferred_contact=None,
+    wheel_recipients=None,
+    preferred_recipient=None,
     already_shared_full_list=False,
     last_own_message="none",
     discussion_rounds=None,
 ):
     symbols_str = ", ".join(my_symbols)
     figures_list = ", ".join(my_symbols)
-    recipients_text = ", ".join(chain_contacts)
+    wheel_recipients = wheel_recipients or get_wheel_recipients(agent_name)
+    recipients_text = ", ".join(wheel_recipients)
     recipient_choices_text = f"<one of: {recipients_text}>" if recipients_text else "<no valid recipients>"
-    preferred_text = preferred_contact or "choose one valid recipient"
+    preferred_text = preferred_recipient or "choose one valid recipient"
     shared_full_list_text = "yes" if already_shared_full_list else "no"
-    recent_sources_text = ", ".join(chain_contacts) if chain_contacts else "VALID RECIPIENTS"
+    recent_sources_text = ", ".join(wheel_recipients) if wheel_recipients else "VALID RECIPIENTS"
     turn_mode = "answer" if can_answer else "discussion"
     try:
         discussion_rounds = int(discussion_rounds)
@@ -48,18 +60,11 @@ def build_chain_prompt(
     discussion_rounds = max(0, discussion_rounds)
     answer_start_round = discussion_rounds + 1
     final_answer_allowed = "yes" if can_answer else "no"
-    try:
-        round_number = int(current_round)
-    except (TypeError, ValueError):
-        round_number = 1
-    full_list_rule = (
-        "* First, share your full figure list with one valid recipient.\n"
-        if round_number <= 1
-        else ""
-    )
+    normalized_agent = normalize_agent_name(agent_name)
 
     history_text = ""
-    for msg in conversation_history[-5:]:
+    history_limit = 10 if normalized_agent == "Agent5" else 5
+    for msg in conversation_history[-history_limit:]:
         sender = msg.get("sender", "SYSTEM")
         text = msg.get("text", "")
         history_text += f"[{sender}]: {text}\n"
@@ -67,13 +72,26 @@ def build_chain_prompt(
     if not history_text:
         history_text = "(No received messages yet.)\n"
 
-    if can_answer:
+    if normalized_agent == "Agent5":
+        discussion_instruction = "During discussion, collect missing full lists from valid recipients."
+    else:
+        discussion_instruction = "During discussion, send your own full list if you have not sent it. After that, respond only to central-hub requests using your own figures."
+
+    if can_answer and normalized_agent == "Agent5":
         turn_block = f"""
 YOUR TURN:
+Current round: {current_round}
+Discussion-only rounds: {discussion_rounds}
+Answer allowed starting round: {answer_start_round}
+Final answer allowed: {final_answer_allowed}
+
 Final answer is allowed now, but not required.
 If unsure, keep discussing.
 
-Use ACTION: ANSWER only if one figure is in your list and is clearly supported by the received messages.
+Use ACTION: ANSWER only if exactly one figure appears in all five lists: all four received lists and your own list.
+If any full list is missing, use ACTION: CHAT.
+Do not answer from repeated figure names.
+Do not answer from majority agreement.
 Do not guess.
 If more than one figure is still possible, use ACTION: CHAT.
 
@@ -88,13 +106,37 @@ or
 ACTION: ANSWER
 WORD: <figure>
 """
+    elif can_answer:
+        turn_block = f"""
+YOUR TURN:
+Current round: {current_round}
+Discussion-only rounds: {discussion_rounds}
+Answer allowed starting round: {answer_start_round}
+Final answer allowed: {final_answer_allowed}
+
+This is answer-allowed mode, but you are not the solving agent.
+You must use ACTION: CHAT only.
+Send your own full list if you have not sent it. After that, respond only to central-hub requests using your own figures.
+
+Use:
+
+ACTION: CHAT
+TO: {recipient_choices_text}
+MESSAGE: <short message>
+"""
     else:
         turn_block = f"""
 YOUR TURN:
+Current round: {current_round}
+Discussion-only rounds: {discussion_rounds}
+Answer allowed starting round: {answer_start_round}
+Final answer allowed: {final_answer_allowed}
+
 This is still the discussion stage.
-Do not submit a final answer.
-Use ACTION: CHAT only.
-Share useful information, compare figure lists, respond to questions, or pass useful information from one valid recipient to another.
+You must use ACTION: CHAT only.
+Do not use ACTION: ANSWER before round {answer_start_round}.
+
+{discussion_instruction}
 
 Use:
 
@@ -103,40 +145,9 @@ TO: {recipient_choices_text}
 MESSAGE: <short message>
 """
 
-    if len(chain_contacts) == 1:
+    if normalized_agent == "Agent5":
         role_prompt = f"""
-You are {agent_name}, an endpoint agent in a chain topology.
-
-Your figures:
-{symbols_str}
-
-Goal:
-Find the one figure shared by all agents.
-
-Your only valid recipient:
-{recipients_text}
-
-You can talk only to {recipients_text}.
-You cannot talk directly to other agents.
-Information from the rest of the chain must come through your valid recipient.
-
-Rules:
-* Send one private message per turn.
-* Send your message only to {recipients_text}.
-* Use only your figures and messages you received.
-{full_list_rule}
-* Compare your figures with received information.
-* Share useful matches, rejected figures, and possible candidates.
-* As the conversation continues, narrow the possible common figures.
-* You may propose a possible common figure only if it is in your own list and appears in information received from another agent.
-* Confirm another proposal only if that figure is in your own list.
-* Reject another proposal if that figure is not in your own list.
-* Do not guess.
-* Do not repeat your previous message.
-"""
-    else:
-        role_prompt = f"""
-You are {agent_name}, a middle agent in a chain topology.
+You are the central hub in a wheel topology.
 
 Your figures:
 {symbols_str}
@@ -147,26 +158,50 @@ Find the one figure shared by all agents.
 Your valid recipients:
 {recipients_text}
 
-You can talk only to these valid recipients:
+You can send messages only to your valid recipients.
+The other agents cannot talk to each other.
+Only you can collect all lists and find the common figure.
+
+Rules:
+* You are the central hub in a wheel topology.
+* You must collect one full figure list from each valid recipient.
+* You must use your own figure list as the fifth list.
+* You must compare all five lists to find one common figure before answering.
+* The final answer must appear in all four received lists and in your own list.
+* Do not ask candidate yes/no questions.
+* Do not ask broad comparison questions.
+* Do not ask one recipient about another recipient.
+* If exactly one figure appears in all five lists and final answer is allowed, use ACTION: ANSWER.
+* Use only these figures: square, circle, triangle, diamond, cross, asterisk.
+* Do not guess.
+"""
+    else:
+        role_prompt = f"""
+You are {agent_name} in a wheel topology.
+
+Your figures:
+{symbols_str}
+
+Your valid recipients:
 {recipients_text}
 
-You cannot talk directly to other agents.
-You should help useful information move along the chain.
+You can send messages only to your valid recipients.
+Task: send your own figure list to your valid recipient. After that, answer only questions about your own figures.
 
 Rules:
 * Send one private message per turn.
-* Choose exactly one valid recipient before writing the message.
-* Choose the recipient who most needs the information or the suggested recipient.
-* Use only your figures and messages you received.
-{full_list_rule}
-* Compare information from both sides of the chain.
-* Pass useful matches, rejected figures, and possible candidates along the chain.
-* As the conversation continues, narrow the possible common figures.
-* You may propose a possible common figure only if it is in your own list and appears in information received from another agent.
-* Confirm another proposal only if that figure is in your own list.
-* Reject another proposal if that figure is not in your own list.
+* Choose exactly one valid recipient.
+* Send your full figure list to your valid recipient.
+* After sending your full list, respond only to requests from your valid recipient.
+* Use only your own figures.
+* If asked whether you have a specific figure, answer yes or no using only your own figures.
+* Do not compare your list with another agent's list.
+* Do not compare lists.
+* Do not ask questions.
+* Do not suggest a final answer.
+* Do not say what another agent has.
+* Use only these figures: square, circle, triangle, diamond, cross, asterisk.
 * Do not guess.
-* Do not repeat your previous message.
 """
 
     return f"""
@@ -174,13 +209,16 @@ Rules:
 
 Timing:
 
-* Rounds 1 through {discussion_rounds} are discussion only. Do not submit a final answer in those rounds.
-* Round {answer_start_round} and later is answer-allowed mode. You may either continue discussion or submit a final answer.
-* Submit a final answer only if one figure is clearly supported by the received messages.
+* Rounds 1 through {discussion_rounds} are discussion only.
+* Round {answer_start_round} and later is answer-allowed mode.
+* With discussion_rounds = 1, round 2 is the first answer-allowed round.
+* In answer-allowed mode, the central hub should compare the full lists received from valid recipients with its own list.
+* Submit a final answer only if exactly one figure appears in all five lists.
 * If unsure, continue discussion.
 
 Valid figures:
 Valid figures are only: square, circle, triangle, diamond, cross, asterisk.
+Use only your own figures and received messages.
 
 CURRENT STATE:
 
@@ -203,7 +241,7 @@ RECENT MESSAGES RECEIVED FROM {recent_sources_text}:
 """
 
 
-def parse_chain_response(raw, agent_name, chain_contacts):
+def parse_wheel_response(raw, agent_name, wheel_recipients):
     raw_upper = raw.upper()
 
     if "ACTION: ANSWER" in raw_upper or "ACTION:ANSWER" in raw_upper:
@@ -265,9 +303,9 @@ def parse_chain_response(raw, agent_name, chain_contacts):
         text = raw
 
     normalized_target = normalize_agent_name(raw_target)
-    normalized_contacts = {
-        normalize_agent_name(contact): contact
-        for contact in chain_contacts
+    normalized_recipients = {
+        normalize_agent_name(recipient): recipient
+        for recipient in wheel_recipients
     }
 
     if DEBUG:
@@ -275,18 +313,18 @@ def parse_chain_response(raw, agent_name, chain_contacts):
         print(f"[DEBUG] Normalized TO target from {agent_name}: {normalized_target}")
 
     if not raw_target:
-        target = chain_contacts[0] if chain_contacts else ""
+        target = wheel_recipients[0] if wheel_recipients else ""
         target_source = "client_default"
         if DEBUG:
             print(f"[WARN] No TO target from {agent_name}. Defaulted to {target}.")
-    elif normalized_target not in normalized_contacts:
+    elif normalized_target not in normalized_recipients:
         original_target = raw_target
-        target = chain_contacts[0] if chain_contacts else ""
+        target = wheel_recipients[0] if wheel_recipients else ""
         target_source = "client_default"
         if DEBUG:
             print(f"[WARN] Invalid TO target from {agent_name}: {original_target}. Defaulted to {target}.")
     else:
-        target = normalized_contacts[normalized_target]
+        target = normalized_recipients[normalized_target]
         target_source = "agent"
 
     if DEBUG:

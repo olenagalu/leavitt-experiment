@@ -13,6 +13,7 @@ import platform
 from circle_client import build_circle_prompt, parse_circle_response
 from chain_client import build_chain_prompt, parse_chain_response
 from y_client import build_y_prompt, parse_y_response
+from wheel_client import build_wheel_prompt, parse_wheel_response
 
 # ====================================================================== CONFIG
 OLLAMA_URL = "http://127.0.0.1:11434"
@@ -25,6 +26,24 @@ SERVER_IP = "192.168.0.140"
 SERVER_PORT = 5001
 RECONNECT_DELAY_SECONDS = 5
 # ====================================================================== OLLAMA
+
+def normalize_ollama_options(options=None):
+    options = options if isinstance(options, dict) else {}
+
+    def number(name, fallback, minimum, maximum, integer=False):
+        try:
+            selected = float(options.get(name, fallback))
+        except (TypeError, ValueError):
+            selected = fallback
+        selected = max(minimum, min(maximum, selected))
+        return int(round(selected)) if integer else round(selected, 3)
+
+    return {
+        "temperature": number("temperature", OLLAMA_TEMPERATURE, 0, 2),
+        "top_p": number("top_p", OLLAMA_TOP_P, 0, 1),
+        "repeat_penalty": number("repeat_penalty", OLLAMA_REPEAT_PENALTY, 0, 3),
+        "num_predict": number("num_predict", OLLAMA_NUM_PREDICT, 1, 300, integer=True),
+    }
 
 def check_ollama():
     # Pre-flight check: server reachable and target model available locally.
@@ -66,6 +85,10 @@ def generate_agent_reply(
     y_contacts=None,
     y_recent_messages=None,
     preferred_y_contact=None,
+    wheel_recipients=None,
+    wheel_recent_messages=None,
+    preferred_wheel_recipient=None,
+    ollama_options=None,
 ):
     """
     Ask model to discuss possible common symbols or answer when allowed.
@@ -78,6 +101,8 @@ def generate_agent_reply(
     circle_neighbors = circle_neighbors or []
     chain_contacts = chain_contacts or []
     y_contacts = y_contacts or []
+    wheel_recipients = wheel_recipients or []
+    selected_ollama_options = normalize_ollama_options(ollama_options)
 
     num_agents = max(2, min(5, int(num_agents)))
 
@@ -135,7 +160,31 @@ def generate_agent_reply(
             last_own_message,
             discussion_rounds,
         )
+    elif topology == "wheel":
+        system_prompt = "You are a participant in the figure-matching experiment. Follow the user's instructions exactly."
+        wheel_history = wheel_recent_messages if wheel_recent_messages is not None else conversation_history
+        last_own_message = get_last_own_message(agent_name, conversation_history)
+        already_shared_full_list = has_shared_figures(agent_name, conversation_history, my_symbols)
+        user_prompt = build_wheel_prompt(
+            agent_name,
+            my_symbols,
+            wheel_history,
+            num_agents,
+            current_round,
+            can_answer,
+            wheel_recipients,
+            preferred_wheel_recipient,
+            already_shared_full_list,
+            last_own_message,
+            discussion_rounds,
+        )
     else:
+        try:
+            discussion_rounds = int(discussion_rounds)
+        except (TypeError, ValueError):
+            discussion_rounds = 3
+        discussion_rounds = max(0, discussion_rounds)
+        answer_start_round = discussion_rounds + 1
         system_prompt = f"""
 You are {agent_name}, one of {num_agents} agents in a figure-matching experiment.
 
@@ -151,16 +200,15 @@ Rules:
 - If no figure has been proposed, propose one possible common figure only if it is in your list and appears in another agent's message.
 - Confirm another proposal only if that figure is in your list.
 - Reject another proposal if that figure is not in your list.
-- Rounds 1, 2, and 3 are discussion only. Do not submit a final answer in those rounds.
-- Round 4 and later is answer-allowed mode. You may either continue discussion or submit a final answer.
+- Rounds 1 through {discussion_rounds} are discussion only. Do not submit a final answer in those rounds.
+- Round {answer_start_round} and later is answer-allowed mode. You may either continue discussion or submit a final answer.
 - Submit a final answer only if one figure is clearly supported by the messages.
 - If unsure, continue discussion.
-- Keep the message short.
 - Do not repeat your previous message.
 - Stay only inside the figure task.
 
 Valid figures:
-square, circle, triangle, diamond, cross, asterisk
+Valid figures are only: square, circle, triangle, diamond, cross, asterisk.
 """
 
         history_text = ""
@@ -180,6 +228,7 @@ CURRENT STATE:
 - Total agents: {num_agents}
 - Current round: {current_round}
 - Turn mode: {turn_mode}
+- Discussion-only rounds: {discussion_rounds}
 - Your figures: {figures_list}
 - You already shared your figures: {shared_figures}
 - Your previous message: {last_own_message}
@@ -225,6 +274,11 @@ ACTION: CHAT
 MESSAGE: <short message>
 """
 
+    user_prompt += f"""
+Response length:
+- Limit each message to {selected_ollama_options["num_predict"]} tokens or fewer.
+"""
+
     # Non-streaming generation keeps parsing logic simple and deterministic.
     payload = {
         "model": MODEL_NAME,
@@ -233,10 +287,10 @@ MESSAGE: <short message>
         "stream": False,
         "keep_alive": 300,
         "options": {
-            "temperature": OLLAMA_TEMPERATURE,
-            "top_p": OLLAMA_TOP_P,
-            "repeat_penalty": OLLAMA_REPEAT_PENALTY,
-            "num_predict": OLLAMA_NUM_PREDICT,
+            "temperature": selected_ollama_options["temperature"],
+            "top_p": selected_ollama_options["top_p"],
+            "repeat_penalty": selected_ollama_options["repeat_penalty"],
+            "num_predict": selected_ollama_options["num_predict"],
         },
     }
 
@@ -261,6 +315,8 @@ MESSAGE: <short message>
         return parse_chain_response(raw, agent_name, chain_contacts)
     if topology == "y":
         return parse_y_response(raw, agent_name, y_contacts)
+    if topology == "wheel":
+        return parse_wheel_response(raw, agent_name, wheel_recipients)
     return classify_agent_response(raw)
 
 
@@ -378,6 +434,8 @@ def main():
             circle_neighbors = []
             chain_contacts = []
             y_contacts = []
+            wheel_recipients = []
+            ollama_options = normalize_ollama_options()
             recv_buffer = b""
 
             while True:
@@ -413,22 +471,29 @@ def main():
                     circle_neighbors = msg.get("circle_neighbors", [])
                     chain_contacts = msg.get("chain_contacts", msg.get("chain_neighbors", []))
                     y_contacts = msg.get("y_contacts", [])
+                    wheel_recipients = msg.get("wheel_recipients", [])
+                    ollama_options = normalize_ollama_options(msg.get("ollama_options", ollama_options))
+                    discussion_rounds = msg.get("discussion_rounds")
                     print(f"\n[START] I am {agent_name}")
                     print(f"[START] My figures: {my_symbols}")
                     print(f"[START] Number of agents: {num_agents}")
                     print(f"[START] Topology: {topology}")
+                    print(f"[START] Discussion-only rounds: {discussion_rounds}")
                     if topology == "circle":
                         print(f"[START] Circle neighbors: {circle_neighbors}")
                     if topology == "chain":
                         print(f"[START] Chain contacts: {chain_contacts}")
                     if topology == "y":
                         print(f"[START] Y contacts: {y_contacts}")
+                    if topology == "wheel":
+                        print(f"[START] Wheel recipients: {wheel_recipients}")
+                    print(f"[START] Ollama options: {ollama_options}")
                     conversation_history = []
 
                 elif msg_type == "system":
                     text = msg.get("text", "")
                     print(f"[SYSTEM] {text}")
-                    if topology not in ("circle", "chain", "y"):
+                    if topology not in ("circle", "chain", "y", "wheel"):
                         conversation_history.append({"sender": "SYSTEM", "text": text})
 
                 elif msg_type == "chat":
@@ -447,16 +512,18 @@ def main():
                     circle_recent_messages = None
                     chain_recent_messages = None
                     y_recent_messages = None
+                    wheel_recent_messages = None
                     preferred_neighbor = ""
                     preferred_chain_contact = ""
                     preferred_y_contact = ""
+                    preferred_wheel_recipient = ""
+                    discussion_rounds = msg.get("discussion_rounds")
                     if turn_topology == "circle":
                         agent_name = msg.get("agent_name", agent_name)
                         my_symbols = msg.get("your_symbols", my_symbols)
                         circle_neighbors = msg.get("circle_neighbors", circle_neighbors)
                         circle_recent_messages = msg.get("recent_messages", [])
                         preferred_neighbor = msg.get("preferred_neighbor", "")
-                        discussion_rounds = msg.get("discussion_rounds")
                         if discussion_rounds is None:
                             answer_allowed_from_round = msg.get("answer_allowed_from_round")
                             if answer_allowed_from_round is not None:
@@ -470,7 +537,6 @@ def main():
                         chain_contacts = msg.get("chain_contacts", msg.get("chain_neighbors", chain_contacts))
                         chain_recent_messages = msg.get("recent_messages", [])
                         preferred_chain_contact = msg.get("preferred_contact", msg.get("preferred_neighbor", ""))
-                        discussion_rounds = msg.get("discussion_rounds")
                         if discussion_rounds is None:
                             answer_allowed_from_round = msg.get("answer_allowed_from_round")
                             if answer_allowed_from_round is not None:
@@ -484,7 +550,19 @@ def main():
                         y_contacts = msg.get("y_contacts", y_contacts)
                         y_recent_messages = msg.get("recent_messages", [])
                         preferred_y_contact = msg.get("preferred_contact", msg.get("preferred_neighbor", ""))
-                        discussion_rounds = msg.get("discussion_rounds")
+                        if discussion_rounds is None:
+                            answer_allowed_from_round = msg.get("answer_allowed_from_round")
+                            if answer_allowed_from_round is not None:
+                                try:
+                                    discussion_rounds = max(0, int(answer_allowed_from_round) - 1)
+                                except (TypeError, ValueError):
+                                    discussion_rounds = None
+                    elif turn_topology == "wheel":
+                        agent_name = msg.get("agent_name", agent_name)
+                        my_symbols = msg.get("your_symbols", my_symbols)
+                        wheel_recipients = msg.get("wheel_recipients", wheel_recipients)
+                        wheel_recent_messages = msg.get("recent_messages", [])
+                        preferred_wheel_recipient = msg.get("preferred_recipient", msg.get("preferred_neighbor", ""))
                         if discussion_rounds is None:
                             answer_allowed_from_round = msg.get("answer_allowed_from_round")
                             if answer_allowed_from_round is not None:
@@ -493,11 +571,12 @@ def main():
                                 except (TypeError, ValueError):
                                     discussion_rounds = None
                     else:
-                        discussion_rounds = None
+                        discussion_rounds = msg.get("discussion_rounds", discussion_rounds)
 
                     current_round = msg.get("round", 1)
                     can_answer = bool(msg.get("can_answer", False))
                     server_prompt = msg.get("prompt")
+                    ollama_options = normalize_ollama_options(msg.get("ollama_options", ollama_options))
                     decision = generate_agent_reply(
                         agent_name,
                         my_symbols,
@@ -517,6 +596,10 @@ def main():
                         y_contacts,
                         y_recent_messages,
                         preferred_y_contact,
+                        wheel_recipients,
+                        wheel_recent_messages,
+                        preferred_wheel_recipient,
+                        ollama_options,
                     )
 
                     if decision.get("action") == "answer":
@@ -527,15 +610,15 @@ def main():
                     else:
                         raw = decision.get("raw", "")
                         text = decision.get("text", "")
-                        if turn_topology in ("chain", "y"):
+                        if turn_topology in ("chain", "y", "wheel"):
                             target = decision.get("target", "")
                             print(f"{agent_name} -> {target}: {text}")
                         else:
                             print(f"[SEND CHAT] {text}")
                         payload = {"type": "chat", "text": text, "raw": raw}
-                        if turn_topology in ("circle", "chain", "y"):
+                        if turn_topology in ("circle", "chain", "y", "wheel"):
                             payload["target"] = decision.get("target", "")
-                        if turn_topology in ("chain", "y"):
+                        if turn_topology in ("chain", "y", "wheel"):
                             payload["target_source"] = decision.get("target_source", "")
                             payload["original_target"] = decision.get("original_target", "")
                         conversation_history.append({"sender": agent_name, "text": text})
@@ -549,6 +632,7 @@ def main():
                     circle_neighbors = []
                     chain_contacts = []
                     y_contacts = []
+                    wheel_recipients = []
                     print("[SERVER] Waiting for next trial start...")
                     continue
 

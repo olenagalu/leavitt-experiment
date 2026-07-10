@@ -54,7 +54,7 @@ def build_y_prompt(
         movement_rule = "Help useful information move through your part of the Y."
 
     history_text = ""
-    for msg in conversation_history[-5:]:
+    for msg in conversation_history[-15:]:
         sender = msg.get("sender", "SYSTEM")
         text = msg.get("text", "")
         history_text += f"[{sender}]: {text}\n"

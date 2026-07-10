@@ -51,6 +51,7 @@ DEFAULT_CHAIN_DISCUSSION_ROUNDS = 8
 DEFAULT_Y_DISCUSSION_ROUNDS = 8
 DEFAULT_WHEEL_DISCUSSION_ROUNDS = 2
 DEFAULT_BROADCAST_DISCUSSION_ROUNDS = 3
+RECENT_MESSAGE_LIMIT = 15
 JETSON_SSH_USER = "minds_user"
 JETSON_HOSTNAMES = [
     "jetson1.local",
@@ -279,7 +280,7 @@ def normalize_discussion_rounds(value, default=DEFAULT_CIRCLE_DISCUSSION_ROUNDS)
 
 def answer_gate_message_count(topology, server):
     if topology == "circle":
-        return server.circle_discussion_rounds
+        return 0
     if topology == "chain":
         return server.chain_discussion_rounds
     if topology == "y":
@@ -515,16 +516,16 @@ class LeavittServer:
                 self._send(sock, msg_dict)
 
     def _recent_circle_messages(self, agent_id):
-        return list(self.agent_histories.get(agent_id, [])[-5:])
+        return list(self.agent_histories.get(agent_id, [])[-RECENT_MESSAGE_LIMIT:])
 
     def _recent_chain_messages(self, agent_id):
-        return list(self.agent_histories.get(agent_id, [])[-5:])
+        return list(self.agent_histories.get(agent_id, [])[-RECENT_MESSAGE_LIMIT:])
 
     def _recent_y_messages(self, agent_id):
-        return list(self.agent_histories.get(agent_id, [])[-5:])
+        return list(self.agent_histories.get(agent_id, [])[-RECENT_MESSAGE_LIMIT:])
 
     def _recent_wheel_messages(self, agent_id):
-        return list(self.agent_histories.get(agent_id, [])[-5:])
+        return list(self.agent_histories.get(agent_id, [])[-RECENT_MESSAGE_LIMIT:])
 
     def _reset_agent_histories(self):
         for agent_id in list(self.agent_histories):
@@ -1534,7 +1535,7 @@ class LeavittServer:
                 speaker = self.clients[current_sock]["name"]
                 speaker_id = sock_agent_ids.get(current_sock)
 
-            reset_chat_history = turn_count > 0 and turn_count % max(len(active_socks), 1) == 0
+            reset_chat_history = False
             if reset_chat_history:
                 self._reset_agent_histories()
                 self.broadcast({"type": "reset_chat_history"}, recipients=active_socks)

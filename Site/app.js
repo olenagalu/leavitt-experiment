@@ -27,30 +27,25 @@ const topologyMeta = {
   broadcast: {
     label: "Broadcast mode",
     description: "The server sends each chat message to all selected active Jetsons, matching the console broadcast topology.",
-    defaultDiscussionRounds: 3,
   },
   circle: {
     label: "Circle mode",
     description: "Each Jetson sends private messages only to its two circle neighbors.",
-    defaultDiscussionRounds: 6,
     fixedAgents: 5,
   },
   chain: {
     label: "Chain mode",
     description: "Jetsons communicate along a line: Agent1 through Agent5, with only adjacent contacts.",
-    defaultDiscussionRounds: 8,
     fixedAgents: 5,
   },
   y: {
     label: "Y topology",
     description: "Agent3 is the junction, Agent4 bridges to Agent5, and endpoints can only use their branch contact.",
-    defaultDiscussionRounds: 8,
     fixedAgents: 5,
   },
   wheel: {
     label: "Wheel mode",
     description: "Agent5 is the central hub. Other Jetsons send through Agent5.",
-    defaultDiscussionRounds: 2,
     fixedAgents: 5,
   },
 };
@@ -64,15 +59,16 @@ const topologyLinks = {
 
 const defaultOllamaOptions = {
   temperature: 0.2,
-  repeat_penalty: 1.3,
-  num_predict: 70,
+  top_p: 0.7,
+  repeat_penalty: 1.2,
+  num_predict: 77,
 };
+const defaultMaxMessages = 50;
 
 const state = {
   source: "live",
-  mode: "broadcast",
+  mode: "circle",
   agentCount: 5,
-  discussionRounds: topologyMeta.broadcast.defaultDiscussionRounds,
   agents: fallbackAgents,
   activeIndex: 0,
   messageCount: 0,
@@ -85,7 +81,7 @@ const state = {
   eventSource: null,
   autoTrials: false,
   ollamaOptions: { ...defaultOllamaOptions },
-  lastFeedRound: null,
+  maxMessages: defaultMaxMessages,
   chatHistories: {},
 };
 
@@ -99,10 +95,11 @@ const modeButtons = [...document.querySelectorAll("[data-mode]")];
 const agentCount = document.querySelector("#agentCount");
 const agentCountGroup = agentCount.closest(".control-group");
 const agentCountValue = document.querySelector("#agentCountValue");
-const discussionRounds = document.querySelector("#discussionRounds");
 const ollamaTemperature = document.querySelector("#ollamaTemperature");
+const ollamaTopP = document.querySelector("#ollamaTopP");
 const ollamaRepeatPenalty = document.querySelector("#ollamaRepeatPenalty");
 const ollamaNumPredict = document.querySelector("#ollamaNumPredict");
+const maxMessages = document.querySelector("#maxMessages");
 const connectionStatus = document.querySelector("#connectionStatus");
 const statusPill = document.querySelector(".status-pill");
 const sourceLabel = document.querySelector("#sourceLabel");
@@ -112,10 +109,10 @@ const routeText = document.querySelector("#routeText");
 const currentMessageText = document.querySelector("#currentMessageText");
 const chatPanel = document.querySelector("#chatPanel");
 const chatGrid = document.querySelector("#chatGrid");
-const roundMetric = document.querySelector("#roundMetric");
 const messageMetric = document.querySelector("#messageMetric");
 const symbolMetric = document.querySelector("#symbolMetric");
 const eventFeed = document.querySelector("#eventFeed");
+const eventFeedResizeHandle = document.querySelector("#eventFeedResizeHandle");
 const workspace = document.querySelector(".workspace");
 const stageColumn = document.querySelector(".stage-column");
 const infoPanel = document.querySelector("#infoPanel");
@@ -463,6 +460,12 @@ function parseReceiverList(route, agents) {
   return String(route.receiver).split(",").map((name) => name.trim()).filter(Boolean);
 }
 
+function routeLabel(route) {
+  const sender = route?.sender || "?";
+  const receiver = route?.receiver || route?.target || "?";
+  return `${sender} -> ${receiver}`;
+}
+
 function resetChatHistories() {
   state.chatHistories = {};
   visibleAgents().forEach((agent) => {
@@ -498,7 +501,9 @@ function renderChats(topology) {
   chatGrid.innerHTML = agents.map((agent) => {
     const history = state.chatHistories[agent.name] || [];
     const rows = history.length
-      ? history.map((entry) => `<p><b>${escapeHtml(entry.sender)}:</b> ${escapeHtml(entry.message)}</p>`).join("")
+      ? history.map((entry) => {
+        return `<p><b>${escapeHtml(routeLabel(entry))}:</b> ${escapeHtml(entry.message)}</p>`;
+      }).join("")
       : `<p>No private messages yet.</p>`;
     return `
       <article class="chat-card" style="--agent-color:${agent.color}">
@@ -534,9 +539,10 @@ function updateCopy() {
   syncModeButtons(topology);
 
   if (route) {
-    routeText.textContent = `${route.sender} -> ${route.receiver}`;
+    const label = routeLabel(route);
+    routeText.textContent = label;
     currentMessageText.innerHTML = route.message
-      ? `<span class="message-sender">${escapeHtml(route.sender)}:</span> <span class="message-body">${escapeHtml(route.message)}</span>`
+      ? `<span class="message-sender">${escapeHtml(label)}:</span> <span class="message-body">${escapeHtml(route.message)}</span>`
       : "No message text.";
   } else if (state.source === "live") {
     routeText.textContent = waitingForAgents
@@ -555,32 +561,42 @@ function updateCopy() {
   const liveCount = snapshot?.connected?.length || 0;
   if (state.liveConnected || snapshot) {
     connectionStatus.textContent = `${liveCount} Jetson${liveCount === 1 ? "" : "s"} connected`;
-    statusPill.classList.toggle("connected", true);
+    statusPill.classList.toggle("connected", liveCount >= 5);
+    statusPill.classList.toggle("partial", liveCount < 5);
     statusPill.classList.toggle("offline", false);
   } else if (window.location.protocol === "file:") {
     connectionStatus.textContent = "Open http://server:5173";
     statusPill.classList.toggle("connected", false);
+    statusPill.classList.toggle("partial", false);
     statusPill.classList.toggle("offline", true);
   } else {
     connectionStatus.textContent = "Live server offline";
     statusPill.classList.toggle("connected", false);
+    statusPill.classList.toggle("partial", false);
     statusPill.classList.toggle("offline", true);
   }
   agentCountValue.textContent = state.agentCount;
-  roundMetric.textContent = snapshot?.round ?? state.round;
   messageMetric.textContent = snapshot?.messages ?? state.messageCount;
   symbolMetric.textContent = snapshot?.commonSymbol || (state.messageCount >= Math.max(3, state.agentCount) ? "circle" : "?");
   agentCountGroup.hidden = topology !== "broadcast";
+  const fixedFiveMode = ["circle", "chain", "y", "wheel"].includes(topology);
+  const lacksRequiredJetsons = state.source === "live" && fixedFiveMode && liveCount < 5;
   renderChats(topology);
   modeButtons.forEach((button) => {
     button.disabled = trialLocked;
   });
   agentCount.disabled = trialLocked;
-  discussionRounds.disabled = trialLocked;
   ollamaTemperature.disabled = trialLocked;
+  ollamaTopP.disabled = trialLocked;
   ollamaRepeatPenalty.disabled = trialLocked;
   ollamaNumPredict.disabled = trialLocked;
-  startTrial.disabled = state.source !== "live" || trialLocked;
+  maxMessages.disabled = trialLocked;
+  if (trialLocked && snapshot?.maxMessages) {
+    maxMessages.value = String(snapshot.maxMessages);
+    state.maxMessages = snapshot.maxMessages;
+  }
+  startTrial.disabled = state.source !== "live" || trialLocked || lacksRequiredJetsons;
+  startTrial.title = lacksRequiredJetsons ? "Circle, chain, Y, and wheel require all 5 Jetsons connected." : "";
   stopTrial.disabled = state.source !== "live" || !trialLocked;
   restartClients.disabled = state.source !== "live" || trialLocked;
   clearFeed.disabled = trialLocked;
@@ -612,30 +628,11 @@ function updateStageOverlay(snapshot) {
   }
 }
 
-function addRoundHeader(round) {
-  if (!round || state.lastFeedRound === round) {
-    return;
-  }
-  state.lastFeedRound = round;
-  const header = document.createElement("li");
-  header.className = "round-header";
-  header.textContent = `Round ${round}`;
-  eventFeed.prepend(header);
-}
-
 function insertFeedItem(item) {
-  const first = eventFeed.firstElementChild;
-  if (first?.classList.contains("round-header")) {
-    eventFeed.insertBefore(item, first.nextSibling);
-  } else {
-    eventFeed.prepend(item);
-  }
+  eventFeed.prepend(item);
 }
 
-function addEvent(kind, title, text, topology = state.mode, round = null, sender = null) {
-  if (kind === "chat") {
-    addRoundHeader(round);
-  }
+function addEvent(kind, title, text, topology = state.mode, sender = null) {
   const item = document.createElement("li");
   item.className = [
     topology !== "broadcast" ? "circle-event" : "",
@@ -648,7 +645,7 @@ function addEvent(kind, title, text, topology = state.mode, round = null, sender
   insertFeedItem(item);
   eventFeed.scrollTop = 0;
 
-  while (eventFeed.children.length > 14) {
+  while (eventFeed.children.length > 80) {
     eventFeed.lastElementChild.remove();
   }
 }
@@ -669,7 +666,7 @@ function demoStep() {
   state.round = Math.floor((state.messageCount - 1) / state.agentCount) + 1;
   state.lastRoute.round = state.round;
   recordChat(state.lastRoute);
-  addEvent("chat", `${sender.name} -> ${receiverText}`, text, state.mode, state.round, sender.name);
+  addEvent("chat", routeLabel(state.lastRoute), text, state.mode, sender.name);
   state.activeIndex = (state.activeIndex + 1) % state.agentCount;
 
   updateCopy();
@@ -686,8 +683,6 @@ function setMode(mode) {
     state.agentCount = topologyMeta[mode].fixedAgents;
     agentCount.value = String(state.agentCount);
   }
-  state.discussionRounds = defaultDiscussionRounds(mode, state.agentCount);
-  discussionRounds.value = String(state.discussionRounds);
   if (state.source === "demo") {
     resetDemo();
   }
@@ -708,7 +703,6 @@ function setSource(source) {
   demoControls.hidden = source !== "demo";
   liveControls.hidden = source !== "live";
   eventFeed.innerHTML = "";
-  state.lastFeedRound = null;
   resetChatHistories();
   state.lastRoute = null;
 
@@ -729,7 +723,6 @@ function resetDemo() {
   state.round = 1;
   state.lastRoute = null;
   eventFeed.innerHTML = "";
-  state.lastFeedRound = null;
   resetChatHistories();
 }
 
@@ -786,62 +779,122 @@ function handleLiveEvent(event) {
     state.lastRoute = payload;
     state.pulse = 0;
     recordChat(payload);
-    addEvent("chat", `${payload.sender} -> ${payload.receiver}`, payload.message || "", payload.topology, payload.round, payload.sender);
+    addEvent("chat", routeLabel(payload), payload.message || "", payload.topology, payload.sender);
   } else if (event.kind === "trial_started") {
     state.lastRoute = null;
     eventFeed.innerHTML = "";
-    state.lastFeedRound = null;
     resetChatHistories();
   } else if (event.kind === "turn_started") {
     return;
   } else if (event.kind === "answer") {
-    return;
+    addEvent("system", `${payload.speaker} answered`, payload.word || "", state.mode, payload.speaker);
+  } else if (event.kind === "invalid_output") {
+    addEvent("error", `${payload.speaker} output skipped`, payload.reason || "Invalid format.", state.mode, payload.speaker);
+  } else if (event.kind === "invalid_route") {
+    const target = payload.target ? `Invalid target: ${payload.target}` : "Missing or invalid target";
+    addEvent("error", `${payload.sender} message skipped`, target, payload.topology || state.mode, payload.sender);
+  } else if (event.kind === "timeout") {
+    addEvent("error", `${payload.speaker} timed out`, "No response received.", state.mode, payload.speaker);
   } else if (event.kind === "trial_finished") {
     return;
   } else if (event.kind === "client_joined") {
-    return;
+    const label = payload.reloaded ? "reconnected after reload" : "connected";
+    addEvent("system", `${payload.agent} ${label}`, payload.hostname || "", state.mode, payload.agent);
   } else if (event.kind === "client_left") {
-    return;
+    addEvent("error", `${payload.agent} disconnected`, payload.reason || "", state.mode, payload.agent);
   } else if (event.kind === "waiting") {
-    return;
+    const missing = payload.missing?.length ? ` Missing: ${payload.missing.join(", ")}` : "";
+    addEvent("system", "Waiting for Jetsons", `${payload.selected}/${payload.needed} connected.${missing}`, state.mode);
+  } else if (event.kind === "server") {
+    addEvent("system", "Server", payload.message || "", state.mode);
+  } else if (event.kind === "clients_reload_started") {
+    const agents = payload.agents?.length ? payload.agents.join(", ") : "none";
+    addEvent("system", "Reload started", `${payload.count || 0} connected Jetson(s): ${agents}`, state.mode);
+  } else if (event.kind === "client_reload_requested") {
+    addEvent("system", `${payload.agent} reload requested`, payload.hostname || "", state.mode, payload.agent);
+  } else if (event.kind === "client_reload_command_sent") {
+    addEvent("system", `${payload.agent} reload command sent`, "Waiting for disconnect and reconnect.", state.mode, payload.agent);
+  } else if (event.kind === "client_reload_command_failed") {
+    const reason = payload.reason ? `${payload.hostname || ""}: ${payload.reason}` : (payload.hostname || "");
+    addEvent("error", `${payload.agent} reload command failed`, reason, state.mode, payload.agent);
+  } else if (event.kind === "clients_reload_commands_finished") {
+    const pending = payload.pending?.length ? ` Waiting for: ${payload.pending.join(", ")}` : " No reconnects pending.";
+    addEvent("system", "Reload commands done", `${payload.sent}/${payload.requested} sent.${pending}`, state.mode);
+  } else if (event.kind === "client_reload_completed") {
+    const pending = payload.pending?.length ? `Still waiting for: ${payload.pending.join(", ")}` : "No agents pending.";
+    addEvent("system", `${payload.agent} reload complete`, pending, state.mode, payload.agent);
+  } else if (event.kind === "clients_reload_finished") {
+    addEvent("system", "Reload complete", payload.message || "", state.mode);
   }
 }
 
 function renderResults(results) {
+  const activeTopology = state.source === "live" && (state.liveSnapshot?.trialActive || state.liveSnapshot?.trialRequested)
+    ? state.liveSnapshot.topology
+    : state.mode;
+  const topology = topologyMeta[activeTopology]?.label || activeTopology || "-";
+  const topologyRow = `<tr><td><strong>Topology</strong></td><td colspan="6">${escapeHtml(topology)}</td></tr>`;
+
   if (!results.length) {
-    resultsBody.innerHTML = `<tr><td colspan="7">No live trials yet.</td></tr>`;
+    resultsBody.innerHTML = `${topologyRow}<tr><td colspan="7">No live trials yet.</td></tr>`;
     return;
   }
-  resultsBody.innerHTML = [...results].reverse().map((result) => {
+  const resultRows = [...results].reverse().map((result) => {
     const resultClass = result.success ? "result-good" : "result-bad";
-    const submittedClass = result.final_answer_word
-      ? (result.success ? "answer-correct" : "answer-wrong")
-      : "answer-empty";
+    const resultText = result.success ? "Success" : "Fail";
+    const submittedFigure = resultSubmittedFigureText(result);
+    const correctFigure = resultCorrectFigureText(result);
     return `
       <tr>
-        <td>${result.trial_id}</td>
-        <td>${escapeHtml(result.topology)}</td>
-        <td><span class="${resultClass}">${escapeHtml(result.result)}</span></td>
-        <td>${escapeHtml(result.common_word || "-")}</td>
-        <td><span class="${submittedClass}">${escapeHtml(result.final_answer_word || "none")}</span></td>
-        <td>${result.rounds ?? "-"}</td>
+        <td>${result.trial_id ?? "-"}</td>
+        <td><span class="${resultClass}">${resultText}</span></td>
+        <td>${escapeHtml(submittedFigure)}</td>
+        <td>${escapeHtml(correctFigure)}</td>
+        <td>${result.temperature ?? result.ollama_options?.temperature ?? "-"}</td>
+        <td>${result.total_messages ?? "-"}</td>
         <td>${result.time_seconds ?? "-"}s</td>
       </tr>
     `;
   }).join("");
+  resultsBody.innerHTML = `${topologyRow}${resultRows}`;
 }
 
-function defaultDiscussionRounds(topology, count) {
-  return topologyMeta[topology]?.defaultDiscussionRounds ?? Math.max(0, Number(count) - 1);
+function resultSubmittedFigureText(result) {
+  const submitted = result.submitted_answer
+    || result.final_answer_word
+    || latestAnswerValue(result.answers);
+  if (submitted) {
+    return figureDisplayText(submitted);
+  }
+  if (result.submitted_figure_status) {
+    return result.submitted_figure_status;
+  }
+  if (result.stopped || result.result === "stopped") {
+    return "Trial stopped";
+  }
+  if (result.max_messages_reached) {
+    return "No figure submitted (message limit reached)";
+  }
+  return "No figure submitted";
 }
 
-function getDiscussionRounds() {
-  const fallback = defaultDiscussionRounds(state.mode, state.agentCount);
-  const value = Number(discussionRounds.value);
-  const normalized = Number.isFinite(value) ? Math.max(0, Math.min(20, Math.floor(value))) : fallback;
-  discussionRounds.value = String(normalized);
-  state.discussionRounds = normalized;
-  return normalized;
+function resultCorrectFigureText(result) {
+  const correct = result.correct_answer
+    || result.common_word
+    || result.commonSymbol;
+  return correct ? figureDisplayText(correct) : "-";
+}
+
+function latestAnswerValue(answers) {
+  if (!answers || typeof answers !== "object") {
+    return "";
+  }
+  const values = Object.values(answers).filter(Boolean);
+  return values.length ? values[values.length - 1] : "";
+}
+
+function figureDisplayText(value) {
+  return String(value ?? "").trim();
 }
 
 function numberFromInput(input, fallback, min, max, integer = false) {
@@ -855,14 +908,26 @@ function numberFromInput(input, fallback, min, max, integer = false) {
 function getOllamaOptions() {
   state.ollamaOptions = {
     temperature: numberFromInput(ollamaTemperature, defaultOllamaOptions.temperature, 0, 2),
+    top_p: numberFromInput(ollamaTopP, defaultOllamaOptions.top_p, 0, 1),
     repeat_penalty: numberFromInput(ollamaRepeatPenalty, defaultOllamaOptions.repeat_penalty, 0, 3),
     num_predict: numberFromInput(ollamaNumPredict, defaultOllamaOptions.num_predict, 1, 300, true),
   };
   return state.ollamaOptions;
 }
 
+function getMaxMessages() {
+  state.maxMessages = numberFromInput(maxMessages, defaultMaxMessages, 1, 500, true);
+  return state.maxMessages;
+}
+
 async function requestStartTrial() {
   if (state.liveSnapshot?.trialActive || state.liveSnapshot?.trialRequested) {
+    return;
+  }
+  const fixedFiveMode = ["circle", "chain", "y", "wheel"].includes(state.mode);
+  const liveCount = state.liveSnapshot?.connected?.length || 0;
+  if (fixedFiveMode && liveCount < 5) {
+    addEvent("error", "Could not start trial", "Circle, chain, Y, and wheel require all 5 Jetsons connected.", state.mode);
     return;
   }
   try {
@@ -872,8 +937,8 @@ async function requestStartTrial() {
       body: JSON.stringify({
         topology: state.mode,
         num_agents: state.agentCount,
-        discussion_rounds: getDiscussionRounds(),
         ollama_options: getOllamaOptions(),
+        max_messages: getMaxMessages(),
       }),
     });
     const payload = await response.json();
@@ -885,6 +950,8 @@ async function requestStartTrial() {
 }
 
 async function requestStopTrial() {
+  state.autoTrials = false;
+  updateCopy();
   try {
     const response = await fetch("/api/stop", { method: "POST" });
     const payload = await response.json();
@@ -910,8 +977,8 @@ async function requestAutoTrials() {
         enabled: nextEnabled,
         topology: state.mode,
         num_agents: state.agentCount,
-        discussion_rounds: getDiscussionRounds(),
         ollama_options: getOllamaOptions(),
+        max_messages: getMaxMessages(),
       }),
     });
     const payload = await response.json();
@@ -931,10 +998,15 @@ async function requestRestartClients() {
   if (state.liveSnapshot?.trialActive || state.liveSnapshot?.trialRequested) {
     return;
   }
+  eventFeed.innerHTML = "";
+  resetChatHistories();
+  state.lastRoute = null;
+  state.messageCount = 0;
+  state.round = 1;
   try {
     const response = await fetch("/api/restart-clients", { method: "POST" });
     const payload = await response.json();
-    addEvent(response.ok ? "system" : "error", "Reload Jetsons", payload.message || "", state.mode);
+    addEvent(response.ok ? "system" : "error", "Restart fresh", payload.message || "", state.mode);
     fetchState();
   } catch {
     addEvent("system", "Live server offline", "Start dashboard_server.py, then reload this page.", state.mode);
@@ -1012,6 +1084,26 @@ function startStageResize(event) {
   window.addEventListener("pointerup", stopResize);
 }
 
+function startEventFeedResize(event) {
+  event.preventDefault();
+  const startY = event.clientY;
+  const startHeight = eventFeed.getBoundingClientRect().height;
+
+  function resize(moveEvent) {
+    const maxHeight = Math.max(420, window.innerHeight * 1.5);
+    const nextHeight = Math.max(120, Math.min(maxHeight, startHeight + (moveEvent.clientY - startY)));
+    eventFeed.style.setProperty("--event-feed-height", `${Math.round(nextHeight)}px`);
+  }
+
+  function stopResize() {
+    window.removeEventListener("pointermove", resize);
+    window.removeEventListener("pointerup", stopResize);
+  }
+
+  window.addEventListener("pointermove", resize);
+  window.addEventListener("pointerup", stopResize);
+}
+
 sourceButtons.forEach((button) => {
   button.addEventListener("click", () => setSource(button.dataset.source));
 });
@@ -1025,10 +1117,6 @@ agentCount.addEventListener("input", () => {
     return;
   }
   state.agentCount = Number(agentCount.value);
-  if (!discussionRounds.matches(":focus")) {
-    state.discussionRounds = defaultDiscussionRounds(state.mode, state.agentCount);
-    discussionRounds.value = String(state.discussionRounds);
-  }
   if (state.source === "demo") {
     resetDemo();
   }
@@ -1037,20 +1125,20 @@ agentCount.addEventListener("input", () => {
   draw();
 });
 
-discussionRounds.addEventListener("input", () => {
-  if (state.liveSnapshot?.trialActive || state.liveSnapshot?.trialRequested) {
-    return;
-  }
-  getDiscussionRounds();
-});
-
-[ollamaTemperature, ollamaRepeatPenalty, ollamaNumPredict].forEach((input) => {
+[ollamaTemperature, ollamaTopP, ollamaRepeatPenalty, ollamaNumPredict].forEach((input) => {
   input.addEventListener("input", () => {
     if (state.liveSnapshot?.trialActive || state.liveSnapshot?.trialRequested) {
       return;
     }
     getOllamaOptions();
   });
+});
+
+maxMessages.addEventListener("input", () => {
+  if (state.liveSnapshot?.trialActive || state.liveSnapshot?.trialRequested) {
+    return;
+  }
+  getMaxMessages();
 });
 
 playPause.addEventListener("click", () => {
@@ -1066,11 +1154,11 @@ clearFeed.addEventListener("click", () => {
     return;
   }
   eventFeed.innerHTML = "";
-  state.lastFeedRound = null;
   resetChatHistories();
 });
 panelResizeHandle.addEventListener("pointerdown", startPanelResize);
 stageResizeHandle.addEventListener("pointerdown", startStageResize);
+eventFeedResizeHandle.addEventListener("pointerdown", startEventFeedResize);
 startTrial.addEventListener("click", requestStartTrial);
 stopTrial.addEventListener("click", requestStopTrial);
 autoTrials.addEventListener("click", requestAutoTrials);
@@ -1085,6 +1173,6 @@ setInterval(() => {
 
 window.addEventListener("resize", resizeCanvas);
 resizeCanvas();
-setMode("broadcast");
+setMode("circle");
 setSource("live");
 animate();

@@ -4,13 +4,11 @@ Y-topology helpers for client.py.
 This module is imported by client.py and is not intended to run directly.
 """
 
+import random
 import re
 
 
 DEBUG = False
-DEFAULT_DISCUSSION_ROUNDS = 8
-
-
 def normalize_agent_name(name):
     stripped = str(name).strip()
     cleaned = re.sub(r"[^\w\s]", "", stripped)
@@ -32,32 +30,28 @@ def build_y_prompt(
     already_shared_full_list=False,
     last_own_message="none",
     discussion_rounds=None,
+    pending_question_text="none",
 ):
     symbols_str = ", ".join(my_symbols)
     figures_list = ", ".join(my_symbols)
     recipients_text = ", ".join(y_contacts)
-    recipient_choices_text = f"<one of: {recipients_text}>" if recipients_text else "<no valid recipients>"
-    preferred_text = preferred_contact or "choose one valid recipient"
+    fallback_recipient = preferred_contact or (random.choice(y_contacts) if y_contacts else "")
+    preferred_text = fallback_recipient or "choose one valid recipient"
     shared_full_list_text = "yes" if already_shared_full_list else "no"
     recent_sources_text = ", ".join(y_contacts) if y_contacts else "VALID RECIPIENTS"
-    turn_mode = "answer" if can_answer else "discussion"
-    try:
-        discussion_rounds = int(discussion_rounds)
-    except (TypeError, ValueError):
-        discussion_rounds = DEFAULT_DISCUSSION_ROUNDS
-    discussion_rounds = max(0, discussion_rounds)
-    answer_start_round = discussion_rounds + 1
-    final_answer_allowed = "yes" if can_answer else "no"
-    try:
-        round_number = int(current_round)
-    except (TypeError, ValueError):
-        round_number = 1
-    full_list_rule = (
-        "* First, share your full figure list with one valid recipient.\n"
-        if round_number <= 1
-        else ""
-    )
     normalized_agent = normalize_agent_name(agent_name)
+    if normalized_agent == "Agent3":
+        role_text = "the junction agent"
+        movement_rule = "Agent1 and Agent2 can only reach the group through you. Agent5 can only be reached through Agent4."
+    elif normalized_agent == "Agent4":
+        role_text = "the bridge agent"
+        movement_rule = "Agent5 can only reach the group through you. Help useful information move between Agent3 and Agent5."
+    elif len(y_contacts) == 1:
+        role_text = "an endpoint agent"
+        movement_rule = "Information from the rest of the group must come through your valid recipient."
+    else:
+        role_text = "an agent"
+        movement_rule = "Help useful information move through your part of the Y."
 
     history_text = ""
     for msg in conversation_history[-5:]:
@@ -68,188 +62,97 @@ def build_y_prompt(
     if not history_text:
         history_text = "(No received messages yet.)\n"
 
-    if can_answer:
-        turn_block = f"""
-YOUR TURN:
-Final answer is allowed now, but not required.
-If unsure, keep discussing.
-
-Use ACTION: ANSWER only if one figure is in your list and is clearly supported by the received messages.
-Do not guess.
-If more than one figure is still possible, use ACTION: CHAT.
-
-Use one of:
-
-ACTION: CHAT
-TO: {recipient_choices_text}
-MESSAGE: <short message>
-
-or
+    answer_priority = (
+        f"7. Submit ANSWER only as one of your own figure words ({figures_list}) and only when that figure has support from received messages as the strongest common candidate."
+        if can_answer
+        else "7. Do not submit ANSWER yet. Send one useful discussion message instead."
+    )
+    answer_rule = (
+        "* Submit ANSWER only when one figure in your own private list is clearly supported by received messages."
+        if can_answer
+        else "* Do not submit ANSWER yet. Keep sharing or comparing useful figure information."
+    )
+    answer_output = (
+        f"""
+or:
 
 ACTION: ANSWER
-WORD: <figure>
+WORD: <one of: {figures_list}>
 """
-    else:
-        turn_block = f"""
-YOUR TURN:
-This is still the discussion stage.
-Do not submit a final answer.
-Use ACTION: CHAT only.
-Share useful information, compare figure lists, answer questions, or pass useful information from one valid recipient to another.
+        if can_answer
+        else ""
+    )
 
-Use:
+    turn_block = f"""
+YOUR TURN:
+You must send exactly one valid message or answer this turn. Do not stay silent.
+
+Decision priority:
+1. You are {agent_name}. Speak only as {agent_name}.
+2. If "Question you should answer now" is not none, send a private reply to the agent who asked that question.
+3. If you have not shared your full private figure list yet, send your full private figure list to one valid recipient.
+4. After your full private figure list has been shared, compare received messages with your own list and send one useful discussion message.
+5. If a discussed or proposed figure is not in your private list, reject it and redirect discussion toward figures that overlap with your own list and received messages.
+6. If a discussed or proposed figure is in your private list, confirm it or pass that useful information to another valid recipient.
+{answer_priority}
+8. You must output exactly one valid action this turn. Do not stay silent.
+
+Output exactly one:
 
 ACTION: CHAT
-TO: {recipient_choices_text}
-MESSAGE: <short message>
-"""
-
-    if normalized_agent == "Agent3":
-        role_prompt = f"""
-You are Agent3, the junction agent in a Y topology.
-
-Your figures:
-{symbols_str}
-
-Goal:
-Find the one figure shared by all agents.
-
-Your valid recipients:
-{recipients_text}
-
-You can talk to Agent1, Agent2, and Agent4.
-Agent1 and Agent2 can only reach the group through you.
-Agent5 can only be reached through Agent4.
-You must help useful information move between the branches.
-
-Rules:
-* Send one private message per turn.
-* Choose exactly one valid recipient before writing the message.
-* Choose the recipient who most needs the information or the suggested recipient.
-* Use only your figures and messages you received.
-{full_list_rule}
-* Compare information from different branches.
-* Pass useful matches, rejected figures, and possible candidates between branches.
-* As the conversation continues, narrow the possible common figures.
-* You may propose a possible common figure only if it is in your own list and appears in information received from another agent.
-* Confirm another proposal only if that figure is in your own list.
-* Reject another proposal if that figure is not in your own list.
-* Do not guess.
-* Do not repeat your previous message.
-"""
-    elif normalized_agent == "Agent4":
-        role_prompt = f"""
-You are Agent4, the bridge agent in a Y topology.
-
-Your figures:
-{symbols_str}
-
-Goal:
-Find the one figure shared by all agents.
-
-Your valid recipients:
-{recipients_text}
-
-You can talk to Agent3 and Agent5.
-Agent5 can only reach the group through you.
-You should help useful information move between Agent3 and Agent5.
-
-Rules:
-* Send one private message per turn.
-* Choose exactly one valid recipient before writing the message.
-* Choose the recipient who most needs the information or the suggested recipient.
-* Use only your figures and messages you received.
-{full_list_rule}
-* Compare information from Agent3 and Agent5.
-* Pass useful matches, rejected figures, and possible candidates between Agent3 and Agent5.
-* As the conversation continues, narrow the possible common figures.
-* You may propose a possible common figure only if it is in your own list and appears in information received from another agent.
-* Confirm another proposal only if that figure is in your own list.
-* Reject another proposal if that figure is not in your own list.
-* Do not guess.
-* Do not repeat your previous message.
-"""
-    elif len(y_contacts) == 1:
-        role_prompt = f"""
-You are {agent_name}, an endpoint agent in a Y topology.
-
-Your figures:
-{symbols_str}
-
-Goal:
-Find the one figure shared by all agents.
-
-Your only valid recipient:
-{recipients_text}
-
-You can talk only to {recipients_text}.
-You cannot talk directly to other agents.
-Information from the rest of the group must come through your valid recipient.
-
-Rules:
-* Send one private message per turn.
-* Send your message only to {recipients_text}.
-* Use only your figures and messages you received.
-{full_list_rule}
-* Compare your figures with received information.
-* Share useful matches, rejected figures, and possible candidates.
-* As the conversation continues, narrow the possible common figures.
-* You may propose a possible common figure only if it is in your own list and appears in information received from another agent.
-* Confirm another proposal only if that figure is in your own list.
-* Reject another proposal if that figure is not in your own list.
-* Do not guess.
-* Do not repeat your previous message.
-"""
-    else:
-        role_prompt = f"""
-You are {agent_name}, an agent in a Y topology.
-
-Your figures:
-{symbols_str}
-
-Goal:
-Find the one figure shared by all agents.
-
-Your valid recipients:
-{recipients_text}
-
-Rules:
-* Send one private message per turn.
-* Choose exactly one valid recipient before writing the message.
-* Use only your figures and messages you received.
-{full_list_rule}
-* Share useful matches, rejected figures, and possible candidates.
-* As the conversation continues, narrow the possible common figures.
-* Do not guess.
-* Do not repeat your previous message.
+TO: <one of: {recipients_text}>
+MESSAGE: <short useful message>
+{answer_output}
+Do not copy these instructions or placeholder words into your response.
 """
 
     return f"""
-{role_prompt}
+You are {agent_name}. Speak only as {agent_name}.
+You are {role_text} in a Y topology.
 
-Timing:
+Your figures:
+{symbols_str}
 
-* Rounds 1 through {discussion_rounds} are discussion only. Do not submit a final answer in those rounds.
-* Round {answer_start_round} and later is answer-allowed mode. You may either continue discussion or submit a final answer.
-* Submit a final answer only if one figure is clearly supported by received messages.
-* If unsure, continue discussion.
+Goal:
+Find the one figure shared by all agents.
+Reach the correct answer using as few total messages across all agents as possible.
 
-Valid figures:
-Valid figures are only: square, circle, triangle, diamond, cross, asterisk.
+Your valid recipients:
+{recipients_text}
+
+Y topology:
+* You can send only one private message per turn.
+* You choose exactly one valid Y recipient for each CHAT message: {recipients_text}.
+* If your response does not include a valid recipient, the system will choose one allowed recipient for this turn.
+* Only the selected recipient will see your message.
+* You cannot talk directly to agents outside your valid recipients.
+* {movement_rule}
+* Do not assume that all agents saw every message.
+
+Rules:
+* Use only your figures and messages you received.
+* If "Question you should answer now" is not none, send your message to the agent who asked and answer that question first.
+* Share your full figure list with a recipient only once.
+* After you already shared your full list with someone, do not list all figures again for that same recipient.
+* Compare received messages with your own list.
+* Ask for missing figure lists only if needed.
+* Do not keep asking about one specific figure. Ask for a missing full list once, or share a comparison/update.
+* If another agent proposes a figure that is not in your own list, say you do not have that figure and redirect discussion toward figures that overlap with your own list and received messages.
+{answer_rule}
+* Never submit ANSWER for a figure that is not in your own list.
+* You must send exactly one valid message or answer this turn. Do not stay silent.
+* Do not repeat your previous message.
 
 CURRENT STATE:
 
 * You are: {agent_name}
 * Total agents: {num_agents}
-* Current round: {current_round}
-* Turn mode: {turn_mode}
-* Final answer allowed: {final_answer_allowed}
-* Discussion-only rounds: {discussion_rounds}
 * Your figures: {figures_list}
 * Valid recipients for {agent_name}: {recipients_text}
-* Suggested recipient for this turn: {preferred_text}
+* Suggested recipient for this turn if you need a default: {preferred_text}
 * You already shared your figures: {shared_full_list_text}
 * Your previous message: {last_own_message}
+* Question you should answer now: {pending_question_text}
 
 RECENT MESSAGES RECEIVED FROM {recent_sources_text}:
 {history_text}
@@ -260,6 +163,11 @@ RECENT MESSAGES RECEIVED FROM {recent_sources_text}:
 
 def parse_y_response(raw, agent_name, y_contacts):
     raw_upper = raw.upper()
+    first_nonempty = next((line.strip() for line in raw.splitlines() if line.strip()), "")
+    answer_match = re.match(r"ANSWER\s*:\s*(.+)$", first_nonempty, flags=re.IGNORECASE)
+    if answer_match:
+        word = answer_match.group(1).strip().strip("` '\"")
+        return {"action": "answer", "word": word, "raw": raw}
 
     if "ACTION: ANSWER" in raw_upper or "ACTION:ANSWER" in raw_upper:
         word = ""
@@ -273,8 +181,19 @@ def parse_y_response(raw, agent_name, y_contacts):
 
     raw_target = ""
     text = ""
+    message_target_match = re.match(
+        r"\s*MESSAGE\s+(Agent\s*\d+)\s*:\s*(.+)$",
+        raw,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if message_target_match:
+        raw_target = message_target_match.group(1).strip()
+        text = message_target_match.group(2).strip()
+
     lines = raw.split("\n")
     for index, line in enumerate(lines):
+        if raw_target and text:
+            break
         line_stripped = line.strip()
         upper = line_stripped.upper()
         if upper.startswith("TO:"):
@@ -330,16 +249,14 @@ def parse_y_response(raw, agent_name, y_contacts):
         print(f"[DEBUG] Normalized TO target from {agent_name}: {normalized_target}")
 
     if not raw_target:
-        target = y_contacts[0] if y_contacts else ""
-        target_source = "client_default"
         if DEBUG:
-            print(f"[WARN] No TO target from {agent_name}. Defaulted to {target}.")
+            print(f"[WARN] No TO target from {agent_name}.")
+        return {"action": "invalid", "raw": raw}
     elif normalized_target not in normalized_contacts:
         original_target = raw_target
-        target = y_contacts[0] if y_contacts else ""
-        target_source = "client_default"
         if DEBUG:
-            print(f"[WARN] Invalid TO target from {agent_name}: {original_target}. Defaulted to {target}.")
+            print(f"[WARN] Invalid TO target from {agent_name}: {original_target}.")
+        return {"action": "invalid", "raw": raw}
     else:
         target = normalized_contacts[normalized_target]
         target_source = "agent"

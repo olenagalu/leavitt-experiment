@@ -47,27 +47,13 @@ def build_circle_prompt(
     )
 
     history_text = ""
-    for msg in conversation_history[-5:]:
+    for msg in conversation_history[-15:]:
         sender = msg.get("sender", "SYSTEM")
         text = msg.get("text", "")
         history_text += f"[{sender}]: {text}\n"
 
     if not history_text:
         history_text = "(No received messages yet.)\n"
-
-    output_options = (
-        f"""
-TO: <one of: {recipients_text}>
-MESSAGE: <useful message comparing received figures with my figures>
-
-ANSWER: <one of: {figures_list}>
-"""
-        if can_answer
-        else f"""
-TO: <one of: {recipients_text}>
-MESSAGE: <useful message comparing received figures with my figures>
-"""
-    )
 
     return f"""
 You are {agent_name}, one of {num_agents} agents in a figure-matching experiment.
@@ -76,31 +62,30 @@ Your figures:
 {symbols_str}
 
 Goal:
-Find the one figure shared by all agents.
+Find the one figure shared by all {num_agents} agents.
 
-Ring network:
-- You can send one private message per turn.
-- You may send it only to one of these valid recipients: {recipients_text}.
-- You choose which valid recipient receives your CHAT message.
-- If your response does not include a valid recipient, the system will choose one allowed recipient for this turn.
-- Only the selected recipient will see your message.
+You may do exactly one action:
+MESSAGE recipient: message
+final answer: one figure word only
+
+Valid chat recipients: {recipients_text}
 
 Rules:
-- Keep your whole response under 77 tokens.
+- Keep the whole response under 77 tokens.
+- Before sending message, choose one valid recipient from: {recipients_text}.
 - Use only your private figures and messages received from allowed recipients.
-- Do not repeat your messages.
-- If you send a CHAT message, choose one valid recipient from: {recipients_text}.
-- If another agent asked a question, answer it first.
-- Share your full figure list only when there is no received message to compare.
-- After sharing your list, your CHAT must compare or pass along useful comparisons and possible shared figures.
-- Say all matches.
-- If any agent says a figure is not in their list, then discuss other figures.
-- Propose possible shared figures based on matches between all messages.
-- Submit ANSWER only when frequently appeared figure in messages is in your list.
-- If you hear about a figure that is not in your list, say you do not have it, pass that ruled-out fact onward.
-- Prefer the recipient who is missing your latest useful information.
-- Do not claim to have a figure unless it is in your private list.
-- Never submit a figure that is not in your private list.
+- Only the selected recipient sees your discussion message.
+- If you have not shared your full figure list yet, your next message should share only your full figure list.
+- After that, compare received messages with your own list.
+- If no figure has been proposed, propose one possible common figure only if it is in your list and appears in another agent's message.
+- Confirm and submit ANSWER figure only if it is in your own list.
+- If another agent proposes a figure that is not in your list, say you do not have it and redirect discussion toward figures that overlap with your list and received messages.
+- Do not submit ANSWER immediately.
+- When you see the common figure, submit ANSWER for it instead of sending another confirmation.
+- Do not submit ANSWER for a figure that is not in your own private list.
+- Do not repeat your previous message.
+- Stay only inside the figure task.
+
 
 
 Current state:
@@ -108,7 +93,6 @@ Current state:
 You are: {agent_name}
 Your figures: {figures_list}
 Final answer allowed: {"yes" if can_answer else "no"}
-{"Final answer is allowed." if can_answer else "Do not submit ANSWER yet."}
 Allowed recipients: {recipients_text}
 Suggested recipient for this turn if you need a default: {suggested_recipient}
 Previous message: {last_own_message}
@@ -116,8 +100,9 @@ Previous message: {last_own_message}
 Recent messages:
 {history_text}
 
-Output exactly one:
-{output_options}
+Output exactly one line and nothing else.
+For discussion, use: MESSAGE <one of: {recipients_text}>: <short useful message>
+For final ANSWER, use only one of these figure words: {figures_list}
 """
 
 

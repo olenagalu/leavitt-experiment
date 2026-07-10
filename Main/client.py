@@ -51,24 +51,31 @@ def text_rules_out_figure(text, figure):
     return any(re.search(pattern, lowered) for pattern in patterns)
 
 
-def active_private_figure(messages, my_symbols, min_mentions=2):
+def active_private_figure(messages, my_symbols, agent_name=None, num_agents=None):
     private_figures = [normalize_figure_answer(symbol) for symbol in my_symbols]
     private_figures = [symbol for symbol in private_figures if symbol]
-    counts = {figure: 0 for figure in private_figures}
+    support = {figure: set() for figure in private_figures}
     ruled_out = set()
+    own_agent = normalize_agent_label(agent_name) if agent_name else ""
+    total_agents = max(2, min(5, int(num_agents))) if num_agents else 2
+    required_support = max(1, total_agents - 1)
 
     for msg in messages or []:
+        sender = msg.get("sender", "") if isinstance(msg, dict) else ""
+        normalized_sender = normalize_agent_label(sender)
+        if own_agent and normalized_sender == own_agent:
+            continue
         text = msg.get("text", "") if isinstance(msg, dict) else str(msg)
         for figure in private_figures:
             if text_rules_out_figure(text, figure):
                 ruled_out.add(figure)
             if text_mentions_figure(text, figure):
-                counts[figure] += 1
+                support[figure].add(normalized_sender or "unknown")
 
     candidates = [
-        (count, figure)
-        for figure, count in counts.items()
-        if count >= min_mentions and figure not in ruled_out
+        (len(senders), figure)
+        for figure, senders in support.items()
+        if len(senders) >= required_support and figure not in ruled_out
     ]
     if not candidates:
         return ""
@@ -303,46 +310,44 @@ Find the one figure shared by all agents.
 Reach the correct answer using as few total messages across all agents as possible.
 
 Rules:
+- Keep the whole response under 77 tokens.
 - Use only your figures and received messages.
-- If you have not shared your full figure list yet, your next message should share it.
+- If you have not shared your full figure list yet, your next message should share only your full figure list.
 - After that, compare received messages with your own list.
 - If no figure has been proposed, propose one possible common figure only if it is in your list and appears in another agent's message.
-- Confirm a proposed figure only if it is in your own list.
-- Reject a proposed figure if it is not in your own list.
+- Confirm and submit ANSWER figure only if it is in your own list.
 - If another agent proposes a figure that is not in your list, say you do not have it and redirect discussion toward figures that overlap with your list and received messages.
 - Ask for missing figure lists only if needed.
-- There are no discussion rounds. The trial is measured by total messages sent by all agents.
-- The server decides when final answers are allowed.
 - Do not submit ANSWER immediately.
-- Submit ANSWER only when final answers are allowed and one figure in your own private list is clearly supported by messages from most agents.
+- When final answers are allowed and you see the common figure, submit ANSWER for it instead of sending another confirmation.
 - Do not submit ANSWER for a figure that is not in your own private list.
 - Do not repeat your previous message.
 - Stay only inside the figure task.
 
 Valid figures:
-Valid figures are only: square, circle, triangle, diamond, cross, asterisk.
+Valid figures are only: asterisk, circle, cross, diamond, square, triangle.
 """
 
+        recent_history = conversation_history[-15:]
         history_text = ""
-        for msg in conversation_history[-5:]:
+        for msg in recent_history:
             sender = msg.get("sender", "SYSTEM")
             text = msg.get("text", "")
             history_text += f"[{sender}]: {text}\n"
 
         last_own_message = get_last_own_message(agent_name, conversation_history)
-        shared_figures = "yes" if has_shared_figures(agent_name, conversation_history, my_symbols) else "no"
+        likely_common_figure = active_private_figure(recent_history, my_symbols, agent_name, num_agents)
+        likely_common_text = likely_common_figure if likely_common_figure else "none yet"
 
         user_prompt = f"""
-CURRENT STATE:
-- You are: {agent_name}
-- Total agents: {num_agents}
-- Total messages sent so far: {current_round}
-- Final answer allowed: {"yes" if can_answer else "no"}
-- Your figures: {figures_list}
-- You already shared your figures: {shared_figures}
-- Your previous message: {last_own_message}
+Current state:
 
-RECENT PUBLIC MESSAGES:
+You are: {agent_name}
+Your figures: {figures_list}
+Final answer allowed: {"yes" if can_answer else "no"}
+Previous message: {last_own_message}
+
+Recent messages:
 """
 
         if history_text:
@@ -351,18 +356,19 @@ RECENT PUBLIC MESSAGES:
             user_prompt += "(No public messages yet — you are going first.)\n"
 
         if can_answer:
-            user_prompt += """
+            user_prompt += f"""
 YOUR TURN:
 You may send one message now.
-Final answer is allowed, but it is not required.
+Final answer is allowed.
 
 Submit ANSWER when one figure in your own private list is clearly supported by messages from most agents.
+Likely common figure from recent messages: {likely_common_text}
+If the likely common figure is not "none yet", answer with that figure now. Do not broadcast another confirmation.
 
-Use exactly one of these formats and nothing else:
+If you are still discussing, write any short useful message.
+If you are submitting the final answer, write only one figure word and nothing else.
 
-BROADCAST: <useful message>
-
-ANSWER: <one of: {figures_list}>
+Final answer words you may use: {figures_list}
 """
         else:
             user_prompt += """
@@ -372,9 +378,7 @@ Do not submit ANSWER yet.
 
 If you have not shared your full figure list yet, your next message should share it. Otherwise compare received messages with your own list, confirm or reject proposed figures, or ask for missing figure lists only if needed.
 
-Use exactly this format and nothing else:
-
-BROADCAST: <useful message containing figure information>
+Write any short useful broadcast message. Do not use an answer-only figure word yet.
 """
 
     print(f"[OLLAMA OPTIONS USED] {selected_ollama_options}")
@@ -440,7 +444,14 @@ def parse_strict_response(raw, valid_recipients=None):
     if not first_nonempty:
         return {"action": "invalid", "raw": raw}
 
+    bare_figure = normalize_figure_answer(first_nonempty)
+    if bare_figure:
+        return {"action": "answer", "word": bare_figure, "raw": raw}
+
     answer_match = re.match(r"ANSWER\s*:\s*(.+)$", first_nonempty, flags=re.IGNORECASE)
+    if answer_match:
+        return {"action": "answer", "word": answer_match.group(1).strip().strip("` '\""), "raw": raw}
+    answer_match = re.match(r"ANSWER\b\s+(.+)$", first_nonempty, flags=re.IGNORECASE)
     if answer_match:
         return {"action": "answer", "word": answer_match.group(1).strip().strip("` '\""), "raw": raw}
     if re.match(r"ACTION\s*:\s*ANSWER\b", first_nonempty, flags=re.IGNORECASE):
@@ -459,6 +470,61 @@ def parse_strict_response(raw, valid_recipients=None):
                 "text": broadcast_match.group(1).strip(),
                 "raw": raw,
                 "target_source": "agent",
+                "original_target": "ALL",
+            }
+        broadcast_match = re.match(r"BROADCAST\b\s*[-–]?\s*(.+)$", first_nonempty, flags=re.IGNORECASE)
+        if broadcast_match:
+            return {
+                "action": "chat",
+                "target": "ALL",
+                "text": broadcast_match.group(1).strip(),
+                "raw": raw,
+                "target_source": "client_recovered_format",
+                "original_target": "ALL",
+            }
+        if re.match(r"ACTION\s*:\s*CHAT\b", first_nonempty, flags=re.IGNORECASE):
+            for line in text.splitlines():
+                message_match = re.match(r"\s*MESSAGE\s*:\s*(.+)$", line, flags=re.IGNORECASE)
+                if message_match:
+                    return {
+                        "action": "chat",
+                        "target": "ALL",
+                        "text": message_match.group(1).strip(),
+                        "raw": raw,
+                        "target_source": "client_recovered_format",
+                        "original_target": "ALL",
+                    }
+        message_match = re.match(r"MESSAGE\s*:\s*(.+)$", first_nonempty, flags=re.IGNORECASE)
+        if message_match:
+            return {
+                "action": "chat",
+                "target": "ALL",
+                "text": message_match.group(1).strip(),
+                "raw": raw,
+                "target_source": "client_recovered_format",
+                "original_target": "ALL",
+            }
+        for line in text.splitlines()[1:]:
+            answer_match = re.match(r"\s*ANSWER\s*:?\s*(.+)$", line, flags=re.IGNORECASE)
+            if answer_match:
+                return {"action": "answer", "word": answer_match.group(1).strip().strip("` '\""), "raw": raw}
+            broadcast_match = re.match(r"\s*(BROADCAST|MESSAGE)\s*:?\s*(.+)$", line, flags=re.IGNORECASE)
+            if broadcast_match:
+                return {
+                    "action": "chat",
+                    "target": "ALL",
+                    "text": broadcast_match.group(2).strip(),
+                    "raw": raw,
+                    "target_source": "client_recovered_format",
+                    "original_target": "ALL",
+                }
+        if first_nonempty:
+            return {
+                "action": "chat",
+                "target": "ALL",
+                "text": text,
+                "raw": raw,
+                "target_source": "client_recovered_plain_text",
                 "original_target": "ALL",
             }
         return {"action": "invalid", "raw": raw}
@@ -930,8 +996,8 @@ def main():
                                 send_json(sock, {"type": "chat", "text": text, "raw": raw})
                             continue
                         if not word:
+                            text = answer_without_figure_message(raw)
                             if turn_topology in ("circle", "chain", "y", "wheel") and private_target:
-                                text = answer_without_figure_message(raw)
                                 print(f"[ANSWER FALLBACK CHAT] {agent_name} -> {private_target}: {text}")
                                 conversation_history.append({"sender": agent_name, "text": f"To {private_target}: {text}"})
                                 send_json(sock, {
@@ -943,8 +1009,9 @@ def main():
                                     "original_target": decision.get("target", ""),
                                 })
                                 continue
-                            print(f"[SEND INVALID ANSWER] {raw_word!r} is not a valid figure.")
-                            send_json(sock, {"type": "invalid", "raw": raw})
+                            print(f"[ANSWER FALLBACK CHAT] {text}")
+                            conversation_history.append({"sender": agent_name, "text": text})
+                            send_json(sock, {"type": "chat", "text": text, "raw": raw})
                             continue
                         send_json(sock, {"type": "answer", "word": word, "raw": raw})
                     elif decision.get("action") == "invalid":

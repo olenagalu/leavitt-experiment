@@ -60,7 +60,7 @@ def build_wheel_prompt(
     )
 
     history_text = ""
-    history_limit = 10 if normalized_agent == "Agent5" else 5
+    history_limit = 15
     for msg in conversation_history[-history_limit:]:
         sender = msg.get("sender", "SYSTEM")
         text = msg.get("text", "")

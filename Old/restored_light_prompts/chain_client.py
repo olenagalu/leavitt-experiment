@@ -4,7 +4,6 @@ Chain-topology helpers for client.py.
 This module is imported by client.py and is not intended to run directly.
 """
 
-import random
 import re
 
 
@@ -30,20 +29,19 @@ def build_chain_prompt(
     already_shared_full_list=False,
     last_own_message="none",
     discussion_rounds=None,
-    pending_question_text="none",
 ):
     symbols_str = ", ".join(my_symbols)
     figures_list = ", ".join(my_symbols)
     recipients_text = ", ".join(chain_contacts)
-    fallback_recipient = preferred_contact or (random.choice(chain_contacts) if chain_contacts else "")
-    preferred_text = fallback_recipient or "choose one valid recipient"
+    recipient_choices_text = f"<one of: {recipients_text}>" if recipients_text else "<no valid recipients>"
+    preferred_text = preferred_contact or "choose one valid recipient"
     shared_full_list_text = "yes" if already_shared_full_list else "no"
     recent_sources_text = ", ".join(chain_contacts) if chain_contacts else "VALID RECIPIENTS"
-    role_name = "an endpoint agent" if len(chain_contacts) == 1 else "a middle agent"
-    movement_rule = (
-        "Information from the rest of the chain must come through your valid recipient."
-        if len(chain_contacts) == 1
-        else "You should pass useful information between your two chain contacts."
+    final_answer_allowed = "yes" if can_answer else "no"
+    full_list_rule = (
+        "* If you have not shared your full figure list yet, your next message should share it.\n"
+        if not already_shared_full_list
+        else ""
     )
 
     history_text = ""
@@ -55,97 +53,125 @@ def build_chain_prompt(
     if not history_text:
         history_text = "(No received messages yet.)\n"
 
-    answer_priority = (
-        f"7. Submit ANSWER only as one of your own figure words ({figures_list}) and only when that figure has support from received messages as the strongest common candidate."
-        if can_answer
-        else "7. Do not submit ANSWER yet. Send one useful discussion message instead."
-    )
-    answer_rule = (
-        "* Submit ANSWER only when one figure in your own private list is clearly supported by received messages."
-        if can_answer
-        else "* Do not submit ANSWER yet. Keep sharing or comparing useful figure information."
-    )
-    answer_output = (
-        f"""
-or:
-
-ACTION: ANSWER
-WORD: <one of: {figures_list}>
-"""
-        if can_answer
-        else ""
-    )
-
-    turn_block = f"""
+    if can_answer:
+        turn_block = f"""
 YOUR TURN:
-You must send exactly one valid message or answer this turn. Do not stay silent.
+You may send one message now.
+Final answer is allowed, but it is not required.
+If unsure, keep discussing.
 
-Decision priority:
-1. You are {agent_name}. Speak only as {agent_name}.
-2. If "Question you should answer now" is not none, send a private reply to the agent who asked that question.
-3. If you have not shared your full private figure list yet, send your full private figure list to one valid recipient.
-4. After your full private figure list has been shared, compare received messages with your own list and send one useful discussion message.
-5. If a discussed or proposed figure is not in your private list, reject it and redirect discussion toward figures that overlap with your own list and received messages.
-6. If a discussed or proposed figure is in your private list, confirm it or pass that useful information to another valid recipient.
-{answer_priority}
-8. You must output exactly one valid action this turn. Do not stay silent.
+Use ANSWER only if final answers are allowed and one figure is clearly supported by the conversation.
+If unsure, continue discussion.
 
-Output exactly one:
+Use exactly one of these formats and nothing else:
 
-ACTION: CHAT
-TO: <one of: {recipients_text}>
-MESSAGE: <short useful message>
-{answer_output}
-Do not copy these instructions or placeholder words into your response.
+MESSAGE AgentX: <short message>
+AgentX must be one of: {recipients_text}
+
+ANSWER: <figure>
+"""
+    else:
+        turn_block = f"""
+YOUR TURN:
+You must send an informative private message now.
+Do not submit ANSWER yet.
+
+If you have not shared your full figure list yet, your next message should share it. Otherwise compare received messages with your own list, confirm or reject proposed figures, or share useful figure comparisons.
+
+Use exactly this format and nothing else:
+
+MESSAGE AgentX: <short useful message containing figure information>
+AgentX must be one of: {recipients_text}
 """
 
-    return f"""
-You are {agent_name}. Speak only as {agent_name}.
-You are {role_name} in a chain topology.
+    if len(chain_contacts) == 1:
+        role_prompt = f"""
+You are {agent_name}, an endpoint agent in a chain topology.
 
 Your figures:
 {symbols_str}
 
 Goal:
 Find the one figure shared by all agents.
-Reach the correct answer using as few total messages across all agents as possible.
+
+Your only valid recipient:
+{recipients_text}
+
+You can talk only to {recipients_text}.
+You cannot talk directly to other agents.
+Information from the rest of the chain must come through your valid recipient.
+
+Rules:
+* Send one private message whenever the server asks for your next message.
+* Send your message only to {recipients_text}.
+* Use only your figures and messages you received.
+{full_list_rule}
+* Compare your figures with received information.
+* Share useful matches, rejected figures, and possible candidates.
+* As the conversation continues, narrow the possible common figures.
+* You may propose a possible common figure only if it is in your own list and appears in information received from another agent.
+* Confirm a proposed figure only if it is in your own list.
+* Reject a proposed figure if it is not in your own list.
+* Do not repeat your previous message.
+* """
+    else:
+        role_prompt = f"""
+You are {agent_name}, a middle agent in a chain topology.
+
+Your figures:
+{symbols_str}
+
+Goal:
+Find the one figure shared by all agents.
 
 Your valid recipients:
 {recipients_text}
 
-Chain topology:
-* You can send only one private message per turn.
-* You choose exactly one valid chain recipient for each CHAT message: {recipients_text}.
-* If your response does not include a valid recipient, the system will choose one allowed recipient for this turn.
-* Only the selected recipient will see your message.
-* You cannot talk directly to other agents.
-* {movement_rule}
-* Do not assume that all agents saw every message.
+You can talk only to these valid recipients:
+{recipients_text}
+
+You cannot talk directly to other agents.
+You should help useful information move along the chain.
 
 Rules:
+* Send one private message whenever the server asks for your next message.
+* Choose exactly one valid recipient before writing the message.
+* Choose the recipient who most needs the information or the suggested recipient.
 * Use only your figures and messages you received.
-* If "Question you should answer now" is not none, send your message to the agent who asked and answer that question first.
-* Share your full figure list with a recipient only once.
-* After you already shared your full list with someone, do not list all figures again for that same recipient.
-* Compare received messages with your own list.
-* Ask for missing figure lists only if needed.
-* Do not keep asking about one specific figure. Ask for a missing full list once, or share a comparison/update.
-* If another agent proposes a figure that is not in your own list, say you do not have that figure and redirect discussion toward figures that overlap with your own list and received messages.
-{answer_rule}
-* Never submit ANSWER for a figure that is not in your own list.
-* You must send exactly one valid message or answer this turn. Do not stay silent.
+{full_list_rule}
+* Compare information from both sides of the chain.
+* Pass useful matches, rejected figures, and possible candidates along the chain.
+* As the conversation continues, narrow the possible common figures.
+* You may propose a possible common figure only if it is in your own list and appears in information received from another agent.
+* Confirm a proposed figure only if it is in your own list.
+* Reject a proposed figure if it is not in your own list.
 * Do not repeat your previous message.
+* """
+
+    return f"""
+{role_prompt}
+
+Trial progress:
+
+* There are no discussion rounds.
+* The trial is measured by total messages sent by all agents.
+* Submit ANSWER only when final answers are allowed and one figure is clearly supported by the conversation.
+* If unsure, continue discussion.
+
+Valid figures:
+Valid figures are only: square, circle, triangle, diamond, cross, asterisk.
 
 CURRENT STATE:
 
 * You are: {agent_name}
 * Total agents: {num_agents}
+* Total messages sent so far: {current_round}
+* Final answer allowed: {final_answer_allowed}
 * Your figures: {figures_list}
 * Valid recipients for {agent_name}: {recipients_text}
-* Suggested recipient for this turn if you need a default: {preferred_text}
+* Suggested recipient for this turn: {preferred_text}
 * You already shared your figures: {shared_full_list_text}
 * Your previous message: {last_own_message}
-* Question you should answer now: {pending_question_text}
 
 RECENT MESSAGES RECEIVED FROM {recent_sources_text}:
 {history_text}
@@ -156,11 +182,6 @@ RECENT MESSAGES RECEIVED FROM {recent_sources_text}:
 
 def parse_chain_response(raw, agent_name, chain_contacts):
     raw_upper = raw.upper()
-    first_nonempty = next((line.strip() for line in raw.splitlines() if line.strip()), "")
-    answer_match = re.match(r"ANSWER\s*:\s*(.+)$", first_nonempty, flags=re.IGNORECASE)
-    if answer_match:
-        word = answer_match.group(1).strip().strip("` '\"")
-        return {"action": "answer", "word": word, "raw": raw}
 
     if "ACTION: ANSWER" in raw_upper or "ACTION:ANSWER" in raw_upper:
         word = ""
@@ -174,19 +195,8 @@ def parse_chain_response(raw, agent_name, chain_contacts):
 
     raw_target = ""
     text = ""
-    message_target_match = re.match(
-        r"\s*MESSAGE\s+(Agent\s*\d+)\s*:\s*(.+)$",
-        raw,
-        flags=re.IGNORECASE | re.DOTALL,
-    )
-    if message_target_match:
-        raw_target = message_target_match.group(1).strip()
-        text = message_target_match.group(2).strip()
-
     lines = raw.split("\n")
     for index, line in enumerate(lines):
-        if raw_target and text:
-            break
         line_stripped = line.strip()
         upper = line_stripped.upper()
         if upper.startswith("TO:"):
@@ -242,14 +252,16 @@ def parse_chain_response(raw, agent_name, chain_contacts):
         print(f"[DEBUG] Normalized TO target from {agent_name}: {normalized_target}")
 
     if not raw_target:
+        target = chain_contacts[0] if chain_contacts else ""
+        target_source = "client_default"
         if DEBUG:
-            print(f"[WARN] No TO target from {agent_name}.")
-        return {"action": "invalid", "raw": raw}
+            print(f"[WARN] No TO target from {agent_name}. Defaulted to {target}.")
     elif normalized_target not in normalized_contacts:
         original_target = raw_target
+        target = chain_contacts[0] if chain_contacts else ""
+        target_source = "client_default"
         if DEBUG:
-            print(f"[WARN] Invalid TO target from {agent_name}: {original_target}.")
-        return {"action": "invalid", "raw": raw}
+            print(f"[WARN] Invalid TO target from {agent_name}: {original_target}. Defaulted to {target}.")
     else:
         target = normalized_contacts[normalized_target]
         target_source = "agent"

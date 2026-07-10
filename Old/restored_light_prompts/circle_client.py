@@ -4,7 +4,6 @@ Circle-topology helpers for client.py.
 This module is imported by client.py and is not intended to run directly.
 """
 
-import random
 import re
 
 
@@ -28,23 +27,17 @@ def build_circle_prompt(
     circle_neighbors,
     preferred_neighbor=None,
     already_shared_full_list=False,
-    shared_full_list_recipients=None,
-    unshared_full_list_recipients=None,
     last_own_message="none",
     discussion_rounds=None,
-    pending_question_text="none",
 ):
     symbols_str = ", ".join(my_symbols)
     figures_list = ", ".join(my_symbols)
     recipients_text = ", ".join(circle_neighbors)
-    fallback_recipient = preferred_neighbor or (random.choice(circle_neighbors) if circle_neighbors else "")
-    shared_full_list_recipients = shared_full_list_recipients or []
-    unshared_full_list_recipients = unshared_full_list_recipients or []
-    suggested_recipient = (
-        unshared_full_list_recipients[0]
-        if unshared_full_list_recipients
-        else fallback_recipient
-    )
+    recipient_choices_text = f"<one of: {recipients_text}>" if recipients_text else "<no valid recipients>"
+    preferred_text = preferred_neighbor or "choose either valid recipient"
+    shared_full_list_text = "yes" if already_shared_full_list else "no"
+    recent_sources_text = " OR ".join(circle_neighbors) if circle_neighbors else "VALID RECIPIENTS"
+    final_answer_allowed = "yes" if can_answer else "no"
 
     history_text = ""
     for msg in conversation_history[-5:]:
@@ -55,19 +48,36 @@ def build_circle_prompt(
     if not history_text:
         history_text = "(No received messages yet.)\n"
 
-    output_options = (
-        f"""
-TO: <one of: {recipients_text}>
-MESSAGE: <useful message comparing received figures with my figures>
+    if can_answer:
+        turn_block = f"""
+YOUR TURN:
+You may send one message now.
+Final answer is allowed, but it is not required.
+If unsure, keep discussing.
 
-ANSWER: <one of: {figures_list}>
+Use ANSWER only if final answers are allowed and one figure is clearly supported by the conversation.
+If unsure, continue discussion.
+
+Use exactly one of these formats and nothing else:
+
+MESSAGE AgentX: <short message>
+AgentX must be one of: {recipients_text}
+
+ANSWER: <figure>
 """
-        if can_answer
-        else f"""
-TO: <one of: {recipients_text}>
-MESSAGE: <useful message comparing received figures with my figures>
+    else:
+        turn_block = f"""
+YOUR TURN:
+You must send an informative private message now.
+Do not submit ANSWER yet.
+
+If you have not shared your full figure list yet, your next message should share it. Otherwise compare received messages with your own list, confirm or reject proposed figures, or share useful figure comparisons.
+
+Use exactly this format and nothing else:
+
+MESSAGE AgentX: <short useful message containing figure information>
+AgentX must be one of: {recipients_text}
 """
-    )
 
     return f"""
 You are {agent_name}, one of {num_agents} agents in a figure-matching experiment.
@@ -78,56 +88,53 @@ Your figures:
 Goal:
 Find the one figure shared by all agents.
 
-Ring network:
-- You can send one private message per turn.
-- You may send it only to one of these valid recipients: {recipients_text}.
-- You choose which valid recipient receives your CHAT message.
-- If your response does not include a valid recipient, the system will choose one allowed recipient for this turn.
-- Only the selected recipient will see your message.
+Circle topology:
+
+* You can send one private message whenever the server asks for your next message.
+* You may send it only to one of these valid recipients: {recipients_text}.
+* Only the selected recipient will see your message.
+* You may pass useful information from one valid recipient to the other valid recipient.
 
 Rules:
-- Keep your whole response under 77 tokens.
-- Use only your private figures and messages received from allowed recipients.
-- Do not repeat your messages.
-- If you send a CHAT message, choose one valid recipient from: {recipients_text}.
-- If another agent asked a question, answer it first.
-- Share your full figure list only when there is no received message to compare.
-- After sharing your list, your CHAT must compare or pass along useful comparisons and possible shared figures.
-- Say all matches.
-- If any agent says a figure is not in their list, then discuss other figures.
-- Propose possible shared figures based on matches between all messages.
-- Submit ANSWER only when frequently appeared figure in messages is in your list.
-- If you hear about a figure that is not in your list, say you do not have it, pass that ruled-out fact onward.
-- Prefer the recipient who is missing your latest useful information.
-- Do not claim to have a figure unless it is in your private list.
-- Never submit a figure that is not in your private list.
 
+* First, choose one valid recipient to whom you will talk.
+* Use only your figures and messages received from valid recipients.
+* If you have not shared your full figure list yet, your next message should share it.
+* After you already shared your full list, do not repeat the full list unless it is useful for comparison.
+* If another agent asked a question, answer it.
+* Compare your figures with information from received messages.
+* Share useful matches, non-matches, possible overlaps, or candidate figures.
+* You may propose a possible common figure only if it is in your list and appears in information from another agent.
+* Confirm a proposed figure only if it is in your list.
+* Reject a proposed figure if it is not in your list.
+* Submit ANSWER only when final answers are allowed and one figure is clearly supported by the conversation.
+* If unsure, continue discussion.
+* Do not repeat your previous message.
+* 
+Valid figures:
+Valid figures are only: square, circle, triangle, diamond, cross, asterisk.
 
-Current state:
+CURRENT STATE:
 
-You are: {agent_name}
-Your figures: {figures_list}
-Final answer allowed: {"yes" if can_answer else "no"}
-{"Final answer is allowed." if can_answer else "Do not submit ANSWER yet."}
-Allowed recipients: {recipients_text}
-Suggested recipient for this turn if you need a default: {suggested_recipient}
-Previous message: {last_own_message}
+* You are: {agent_name}
+* Total agents: {num_agents}
+* Total messages sent so far: {current_round}
+* Final answer allowed: {final_answer_allowed}
+* Your figures: {figures_list}
+* Valid recipients for {agent_name}: {recipients_text}
+* Suggested recipient for this turn: {preferred_text}
+* You already shared your figures: {shared_full_list_text}
+* Your previous message: {last_own_message}
 
-Recent messages:
+RECENT MESSAGES RECEIVED FROM {recent_sources_text}:
 {history_text}
 
-Output exactly one:
-{output_options}
+{turn_block}
 """
 
 
 def parse_circle_response(raw, agent_name, circle_neighbors):
     raw_upper = raw.upper()
-    first_nonempty = next((line.strip() for line in raw.splitlines() if line.strip()), "")
-    answer_match = re.match(r"ANSWER\s*:\s*(.+)$", first_nonempty, flags=re.IGNORECASE)
-    if answer_match:
-        word = answer_match.group(1).strip().strip("` '\"")
-        return {"action": "answer", "word": word, "raw": raw}
 
     if "ACTION: ANSWER" in raw_upper or "ACTION:ANSWER" in raw_upper:
         word = ""
@@ -141,19 +148,8 @@ def parse_circle_response(raw, agent_name, circle_neighbors):
 
     raw_target = ""
     text = ""
-    message_target_match = re.match(
-        r"\s*MESSAGE\s+(Agent\s*\d+)\s*:\s*(.+)$",
-        raw,
-        flags=re.IGNORECASE | re.DOTALL,
-    )
-    if message_target_match:
-        raw_target = message_target_match.group(1).strip()
-        text = message_target_match.group(2).strip()
-
     lines = raw.split("\n")
     for index, line in enumerate(lines):
-        if raw_target and text:
-            break
         line_stripped = line.strip()
         upper = line_stripped.upper()
         if upper.startswith("TO:"):
@@ -209,12 +205,12 @@ def parse_circle_response(raw, agent_name, circle_neighbors):
         print(f"[DEBUG] Normalized TO target from {agent_name}: {normalized_target}")
 
     if not raw_target:
-        target = random.choice(circle_neighbors) if circle_neighbors else ""
+        target = circle_neighbors[0] if circle_neighbors else ""
         if DEBUG:
             print(f"[WARN] No TO target from {agent_name}. Defaulted to {target}.")
     elif normalized_target not in normalized_neighbors:
         original_target = raw_target
-        target = random.choice(circle_neighbors) if circle_neighbors else ""
+        target = circle_neighbors[0] if circle_neighbors else ""
         if DEBUG:
             print(f"[WARN] Invalid TO target from {agent_name}: {original_target}. Defaulted to {target}.")
     else:

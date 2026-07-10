@@ -5,6 +5,7 @@ import os
 import random
 import re
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -17,23 +18,30 @@ MIN_PARTICIPANTS = 2
 MAX_PARTICIPANTS = 5
 DEFAULT_FIGURES_PER_CARD = 3
 MAX_ROUNDS_PER_TRIAL = 10
+DEFAULT_MAX_MESSAGES_PER_TRIAL = 50
+MIN_MESSAGES_PER_TRIAL = 1
+MAX_MESSAGES_PER_TRIAL = 500
+CIRCLE_ANSWER_MESSAGE_GATE = 5
 EFFICIENCY_MAX_ROUNDS_BY_AGENTS = {2: 3, 3: 3, 4: 4, 5: 4}
 CIRCLE_EFFICIENCY_LIMIT_BY_AGENTS = {2: 4, 3: 5, 4: 6, 5: 8}
 CIRCLE_HARD_STOP_BY_AGENTS = {2: 6, 3: 7, 4: 8, 5: 10}
 VALID_TOPOLOGIES = {"broadcast", "circle", "chain", "y", "wheel"}
 FIXED_FIVE_AGENT_TOPOLOGIES = {"circle", "chain", "y", "wheel"}
-DEFAULT_DISCUSSION_ROUNDS = {
-    "broadcast": 3,
-    "circle": 6,
-    "chain": 8,
-    "y": 8,
-    "wheel": 2,
-}
 DEFAULT_OLLAMA_OPTIONS = {
     "temperature": 0.2,
-    "repeat_penalty": 1.3,
-    "num_predict": 70,
+    "top_p": 0.7,
+    "repeat_penalty": 1.2,
+    "num_predict": 77,
 }
+JETSON_SSH_USER = "minds_user"
+JETSON_HOSTNAMES = [
+    "jetson1.local",
+    "jetson2.local",
+    "jetson3.local",
+    "jetson4.local",
+    "jetson5.local",
+]
+JETSON_CLIENT_SERVICE = "leavitt-client.service"
 HOSTNAME_TO_AGENT = {
     "jetson1": "Agent1",
     "jetson2": "Agent2",
@@ -65,6 +73,17 @@ def get_wheel_contacts(agent_id):
     return contacts_by_agent.get(agent_id, [])
 
 
+def display_topology_name(topology):
+    labels = {
+        "broadcast": "Broadcast",
+        "circle": "Circle",
+        "chain": "Chain",
+        "y": "Y topology",
+        "wheel": "Wheel",
+    }
+    return labels.get(topology, str(topology))
+
+
 def normalize_hostname(hostname):
     return str(hostname).strip().lower().split(".", 1)[0]
 
@@ -89,6 +108,12 @@ def get_agent_id(name):
 def get_jetson_number(name):
     match = re.search(r"jetson\s*(\d+)", normalize_hostname(name))
     return int(match.group(1)) if match else None
+
+
+def normalize_figure_answer(value):
+    text = str(value or "").strip().lower()
+    text = re.sub(r"^[^a-z]+|[^a-z]+$", "", text)
+    return text if text in FIGURES else ""
 
 
 def generate_jetson_sets(nicknames, seed=None):
@@ -143,56 +168,54 @@ def get_hard_stop_round(topology, num_agents):
     return MAX_ROUNDS_PER_TRIAL
 
 
-def get_answer_allowed_from_round(topology, num_agents):
-    return DEFAULT_DISCUSSION_ROUNDS.get(topology, DEFAULT_DISCUSSION_ROUNDS["broadcast"]) + 1
-
-
-def get_default_discussion_rounds(topology, num_agents):
-    return DEFAULT_DISCUSSION_ROUNDS.get(topology, DEFAULT_DISCUSSION_ROUNDS["broadcast"])
-
-
-def normalize_discussion_rounds(value, default):
+def normalize_max_messages(value):
     try:
-        rounds = int(value)
+        messages = int(value)
     except (TypeError, ValueError):
-        rounds = default
-    return max(0, rounds)
+        messages = DEFAULT_MAX_MESSAGES_PER_TRIAL
+    return max(MIN_MESSAGES_PER_TRIAL, min(MAX_MESSAGES_PER_TRIAL, messages))
 
 
 def normalize_ollama_options(value):
     source = value if isinstance(value, dict) else {}
 
     def number(name, minimum, maximum, integer=False):
+        fallback = DEFAULT_OLLAMA_OPTIONS[name]
+        raw = source.get(name, fallback)
         try:
-            selected = float(source.get(name, DEFAULT_OLLAMA_OPTIONS[name]))
+            selected = float(raw)
         except (TypeError, ValueError):
-            selected = DEFAULT_OLLAMA_OPTIONS[name]
-        selected = max(minimum, min(maximum, selected))
+            print(f"[OLLAMA OPTIONS WARN] Invalid {name}={raw!r}; using fallback {fallback}.")
+            selected = fallback
+        if selected < minimum or selected > maximum:
+            print(f"[OLLAMA OPTIONS WARN] Invalid {name}={raw!r}; using fallback {fallback}.")
+            selected = fallback
         return int(round(selected)) if integer else round(selected, 3)
 
     return {
         "temperature": number("temperature", 0, 2),
+        "top_p": number("top_p", 0, 1),
         "repeat_penalty": number("repeat_penalty", 0, 3),
         "num_predict": number("num_predict", 1, 300, integer=True),
     }
 
 
-def evaluate_efficiency(found, has_answer, rounds_used, num_agents, topology):
-    max_efficient_rounds = get_efficiency_limit(topology, num_agents)
+def evaluate_efficiency(found, has_answer, messages_used, num_agents, topology, max_messages):
+    max_efficient_messages = max_messages
     if not has_answer:
-        return "failed_no_answer", "No answer was submitted before the hard stop.", max_efficient_rounds
+        return "failed_no_answer", "No answer was submitted before the hard stop.", max_efficient_messages
     if not found:
-        return "failed_wrong_answer", "Agents submitted a wrong answer.", max_efficient_rounds
-    if rounds_used <= max_efficient_rounds:
+        return "failed_wrong_answer", "Agents submitted a wrong answer.", max_efficient_messages
+    if messages_used <= max_efficient_messages:
         return (
             "success_efficient",
-            f"Agents found the correct figure in {rounds_used} rounds, within the efficiency limit of {max_efficient_rounds} rounds.",
-            max_efficient_rounds,
+            f"Agents found the correct figure after {messages_used} total messages.",
+            max_efficient_messages,
         )
     return (
         "success_slow",
-        f"Agents found the correct figure, but used {rounds_used} rounds, after the efficiency limit of {max_efficient_rounds} rounds.",
-        max_efficient_rounds,
+        f"Agents found the correct figure, but used {messages_used} total messages.",
+        max_efficient_messages,
     )
 
 
@@ -212,16 +235,19 @@ class DashboardExperiment:
         self.trial_requested = False
         self.stop_requested = False
         self.auto_trials = False
-        self.auto_topology = "broadcast"
+        self.auto_topology = "circle"
         self.auto_num_agents = 5
-        self.auto_discussion_rounds = get_default_discussion_rounds(self.auto_topology, self.auto_num_agents)
+        self.auto_discussion_rounds = None
         self.auto_ollama_options = normalize_ollama_options(None)
+        self.auto_max_messages = DEFAULT_MAX_MESSAGES_PER_TRIAL
         self.auto_restart_delay = 2
+        self.auto_trial_generation = 0
         self.trial_counter = 0
-        self.topology = "broadcast"
+        self.topology = "circle"
         self.num_agents = 5
-        self.discussion_rounds = get_default_discussion_rounds(self.topology, self.num_agents)
+        self.discussion_rounds = None
         self.ollama_options = normalize_ollama_options(None)
+        self.max_messages = DEFAULT_MAX_MESSAGES_PER_TRIAL
         self.cards = {}
         self.common_symbol = None
         self.circle_neighbors_by_name = {}
@@ -233,11 +259,19 @@ class DashboardExperiment:
         self.wheel_contacts_by_name = {}
         self.wheel_last_target_by_speaker = {}
         self.agent_histories = {}
+        self.unread_agents = set()
+        self.scheduler_queue = []
+        self.messages_per_agent = {}
         self.message_count = 0
+        self.delivery_count = 0
+        self.start_time = None
         self.turn_count = 0
         self.round_number = 1
         self.current_route = None
         self.current_speaker = None
+        self.reload_batch_id = 0
+        self.pending_reload_agents = set()
+        self.last_waiting_event_state = None
 
     def start_tcp_server(self):
         thread = threading.Thread(target=self._tcp_server_loop, daemon=True)
@@ -335,6 +369,7 @@ class DashboardExperiment:
         with self.lock:
             old_sock = next((s for s, info in self.clients.items() if info.get("name") == hostname), None)
             if old_sock is not None:
+                old_info = self.clients.get(old_sock)
                 self.clients.pop(old_sock, None)
                 self.recv_buffers.pop(old_sock, None)
                 if old_sock in self.turn_order:
@@ -343,9 +378,19 @@ class DashboardExperiment:
                     old_sock.close()
                 except OSError:
                     pass
+                if old_info:
+                    self.add_event("client_left", {
+                        "agent": display_agent_name(old_info["name"]),
+                        "hostname": old_info["hostname"],
+                        "reason": "replaced by new connection",
+                    })
 
             self.clients[sock] = {"name": hostname, "hostname": hostname, "address": address}
             self.turn_order.append(sock)
+            reload_completed = hostname in self.pending_reload_agents
+            if reload_completed:
+                self.pending_reload_agents.remove(hostname)
+            pending_reload = [display_agent_name(name) for name in sorted(self.pending_reload_agents)]
 
         self.send_json(sock, {
             "type": "welcome",
@@ -353,7 +398,19 @@ class DashboardExperiment:
             "hostname": hostname,
             "text": f"Welcome {display_agent_name(hostname)} ({hostname}). Waiting for next trial start...",
         })
-        self.add_event("client_joined", {"agent": display_agent_name(hostname), "hostname": hostname})
+        self.add_event("client_joined", {
+            "agent": display_agent_name(hostname),
+            "hostname": hostname,
+            "reloaded": reload_completed,
+        })
+        if reload_completed:
+            self.add_event("client_reload_completed", {
+                "agent": display_agent_name(hostname),
+                "hostname": hostname,
+                "pending": pending_reload,
+            })
+            if not pending_reload:
+                self.add_event("clients_reload_finished", {"message": "All requested Jetsons reconnected."})
 
     def add_event(self, kind, payload):
         with self.lock:
@@ -393,8 +450,10 @@ class DashboardExperiment:
             "numAgents": self.num_agents,
             "discussionRounds": self.discussion_rounds,
             "ollamaOptions": self.ollama_options,
+            "maxMessages": self.max_messages,
             "round": self.round_number,
             "messages": self.message_count,
+            "deliveries": self.delivery_count,
             "turns": self.turn_count,
             "commonSymbol": self.common_symbol,
             "currentRoute": self.current_route,
@@ -406,96 +465,251 @@ class DashboardExperiment:
         with self.lock:
             return self.snapshot_locked()
 
-    def start_trial(self, topology, num_agents, discussion_rounds=None, ollama_options=None):
+    def missing_fixed_five_agents_locked(self):
+        connected_names = {info["name"] for info in self.clients.values()}
+        return [
+            f"jetson{number}"
+            for number in range(1, MAX_PARTICIPANTS + 1)
+            if f"jetson{number}" not in connected_names
+        ]
+
+    def start_trial(self, topology, num_agents, discussion_rounds=None, ollama_options=None, max_messages=None):
         with self.lock:
             if self.trial_active or self.trial_requested:
                 return False, "A trial is already running or waiting for Jetsons."
             self.stop_requested = False
-            self.topology = topology if topology in VALID_TOPOLOGIES else "broadcast"
+            self.topology = topology if topology in VALID_TOPOLOGIES else "circle"
             if self.topology in FIXED_FIVE_AGENT_TOPOLOGIES:
                 self.num_agents = MAX_PARTICIPANTS
+                missing_agents = self.missing_fixed_five_agents_locked()
+                if missing_agents:
+                    missing_display = ", ".join(display_agent_name(name) for name in missing_agents)
+                    return False, (
+                        f"{display_topology_name(self.topology)} requires all 5 Jetsons connected. "
+                        f"Missing: {missing_display}."
+                    )
             else:
                 self.num_agents = max(MIN_PARTICIPANTS, min(MAX_PARTICIPANTS, int(num_agents)))
-            self.discussion_rounds = normalize_discussion_rounds(
-                discussion_rounds,
-                get_default_discussion_rounds(self.topology, self.num_agents),
-            )
+            self.discussion_rounds = None
             self.ollama_options = normalize_ollama_options(ollama_options)
+            self.max_messages = normalize_max_messages(max_messages)
             self.trial_requested = True
         threading.Thread(target=self.run_experiment, daemon=True).start()
         self.add_event("trial_requested", {
             "topology": self.topology,
             "num_agents": self.num_agents,
-            "discussion_rounds": self.discussion_rounds,
+            "discussion_rounds": None,
             "ollama_options": self.ollama_options,
+            "max_messages": self.max_messages,
         })
         return True, "Trial requested."
 
     def stop_trial(self):
         with self.lock:
-            if not self.trial_active and not self.trial_requested:
+            auto_was_enabled = self.auto_trials
+            if not self.trial_active and not self.trial_requested and not auto_was_enabled:
                 return False, "No active trial to stop."
-            self.stop_requested = True
+            if self.trial_active or self.trial_requested:
+                self.stop_requested = True
             self.auto_trials = False
-            targets = list(self.clients.keys())
+            self.auto_trial_generation += 1
+            targets = list(self.clients.keys()) if self.trial_active or self.trial_requested else []
         for sock in targets:
             self.send_json(sock, {"type": "experiment_stop"})
-        self.add_event("trial_stop_requested", {"message": "Trial stop requested."})
-        return True, "Trial stop requested."
+        message = "Trial stop requested. Auto trials disabled." if targets else "Auto trials disabled."
+        self.add_event("trial_stop_requested", {"message": message})
+        return True, message
 
-    def set_auto_trials(self, enabled, topology=None, num_agents=None, discussion_rounds=None, ollama_options=None):
+    def set_auto_trials(self, enabled, topology=None, num_agents=None, discussion_rounds=None, ollama_options=None, max_messages=None):
         should_start = False
         with self.lock:
             self.auto_trials = bool(enabled)
+            self.auto_trial_generation += 1
+            auto_trial_generation = self.auto_trial_generation
             if topology is not None:
-                self.auto_topology = topology if topology in VALID_TOPOLOGIES else "broadcast"
+                self.auto_topology = topology if topology in VALID_TOPOLOGIES else "circle"
             if num_agents is not None:
                 if self.auto_topology in FIXED_FIVE_AGENT_TOPOLOGIES:
                     self.auto_num_agents = MAX_PARTICIPANTS
                 else:
                     self.auto_num_agents = max(MIN_PARTICIPANTS, min(MAX_PARTICIPANTS, int(num_agents)))
-            self.auto_discussion_rounds = normalize_discussion_rounds(
-                discussion_rounds,
-                get_default_discussion_rounds(self.auto_topology, self.auto_num_agents),
-            )
+            self.auto_discussion_rounds = None
             self.auto_ollama_options = normalize_ollama_options(ollama_options)
+            self.auto_max_messages = normalize_max_messages(max_messages)
             should_start = self.auto_trials and not self.trial_active and not self.trial_requested
         self.add_event("auto_trials_changed", {"enabled": self.auto_trials})
         if should_start:
-            self.schedule_next_auto_trial(delay=0)
+            self.schedule_next_auto_trial(delay=0, generation=auto_trial_generation)
         return True, "Auto trials enabled." if self.auto_trials else "Auto trials disabled."
 
     def restart_clients(self):
         with self.lock:
             if self.trial_active or self.trial_requested:
                 return False, "Wait until the current trial is finished before reloading Jetsons."
-            targets = list(self.clients.keys())
+            old_socks = list(self.clients.keys())
+            targets = [
+                (normalize_hostname(host), host)
+                for host in JETSON_HOSTNAMES
+            ]
+            self.clients = {}
+            self.turn_order = []
+            self.recv_buffers = {}
+            self.results = []
             self.auto_trials = False
-        sent_count = 0
-        for sock in targets:
-            if self.send_json(sock, {"type": "restart_client"}):
-                sent_count += 1
-        self.add_event("clients_restart_requested", {"count": sent_count})
-        return True, f"Reload requested for {sent_count} connected Jetson client{'s' if sent_count != 1 else ''}."
+            self.auto_trial_generation += 1
+            self.stop_requested = False
+            self.trial_active = False
+            self.trial_requested = False
+            self.trial_counter = 0
+            self.topology = "circle"
+            self.num_agents = 5
+            self.discussion_rounds = None
+            self.ollama_options = normalize_ollama_options(None)
+            self.max_messages = DEFAULT_MAX_MESSAGES_PER_TRIAL
+            self.cards = {}
+            self.common_symbol = None
+            self.circle_neighbors_by_name = {}
+            self.circle_last_target_by_speaker = {}
+            self.chain_contacts_by_name = {}
+            self.chain_last_target_by_speaker = {}
+            self.y_contacts_by_name = {}
+            self.y_last_target_by_speaker = {}
+            self.wheel_contacts_by_name = {}
+            self.wheel_last_target_by_speaker = {}
+            self.agent_histories = {}
+            self.unread_agents = set()
+            self.scheduler_queue = []
+            self.messages_per_agent = {}
+            self.message_count = 0
+            self.delivery_count = 0
+            self.start_time = None
+            self.turn_count = 0
+            self.round_number = 1
+            self.current_route = None
+            self.current_speaker = None
+            self.events = []
+            self.last_waiting_event_state = None
+            self.reload_batch_id += 1
+            batch_id = self.reload_batch_id
+            self.pending_reload_agents = {name for name, _ in targets}
+        for sock in old_socks:
+            try:
+                sock.close()
+            except OSError:
+                pass
+        self.add_event("clients_reload_started", {
+            "batch": batch_id,
+            "count": len(targets),
+            "agents": [display_agent_name(name) for name, _ in targets],
+            "fresh": True,
+        })
 
-    def schedule_next_auto_trial(self, delay=None):
+        threading.Thread(
+            target=self.restart_clients_via_ssh,
+            args=(batch_id, targets),
+            daemon=True,
+        ).start()
+        return True, (
+            "Fresh dashboard state created. "
+            f"Reload started for {len(targets)} Jetson service{'s' if len(targets) != 1 else ''}."
+        )
+
+    def restart_clients_via_ssh(self, batch_id, targets):
+        sent_count = 0
+        for name, host in targets:
+            agent = display_agent_name(name)
+            self.add_event("client_reload_requested", {
+                "batch": batch_id,
+                "agent": agent,
+                "hostname": host,
+            })
+            cmd = [
+                "ssh",
+                f"{JETSON_SSH_USER}@{host}",
+                f"sudo /usr/bin/systemctl restart {JETSON_CLIENT_SERVICE}",
+            ]
+            try:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=20,
+                )
+            except subprocess.TimeoutExpired:
+                with self.lock:
+                    self.pending_reload_agents.discard(name)
+                self.add_event("client_reload_command_failed", {
+                    "batch": batch_id,
+                    "agent": agent,
+                    "hostname": host,
+                    "reason": "SSH timeout",
+                })
+                continue
+            except Exception as exc:
+                with self.lock:
+                    self.pending_reload_agents.discard(name)
+                self.add_event("client_reload_command_failed", {
+                    "batch": batch_id,
+                    "agent": agent,
+                    "hostname": host,
+                    "reason": str(exc),
+                })
+                continue
+
+            if result.returncode == 0:
+                sent_count += 1
+                self.add_event("client_reload_command_sent", {
+                    "batch": batch_id,
+                    "agent": agent,
+                    "hostname": host,
+                })
+            else:
+                with self.lock:
+                    self.pending_reload_agents.discard(name)
+                detail = result.stderr.strip() or result.stdout.strip() or f"ssh exited {result.returncode}"
+                self.add_event("client_reload_command_failed", {
+                    "batch": batch_id,
+                    "agent": agent,
+                    "hostname": host,
+                    "reason": detail,
+                })
+        with self.lock:
+            pending = [display_agent_name(name) for name in sorted(self.pending_reload_agents)]
+        self.add_event("clients_reload_commands_finished", {
+            "batch": batch_id,
+            "sent": sent_count,
+            "requested": len(targets),
+            "pending": pending,
+        })
+        if not pending:
+            self.add_event("clients_reload_finished", {"message": "No Jetsons are waiting to reconnect."})
+
+    def schedule_next_auto_trial(self, delay=None, generation=None):
+        with self.lock:
+            auto_trial_generation = self.auto_trial_generation if generation is None else generation
         threading.Thread(
             target=self.maybe_start_next_auto_trial,
-            args=(self.auto_restart_delay if delay is None else delay,),
+            args=(self.auto_restart_delay if delay is None else delay, auto_trial_generation),
             daemon=True,
         ).start()
 
-    def maybe_start_next_auto_trial(self, delay):
+    def maybe_start_next_auto_trial(self, delay, generation):
         if delay > 0:
             time.sleep(delay)
         with self.lock:
-            if not self.auto_trials or self.trial_active or self.trial_requested:
+            if (
+                generation != self.auto_trial_generation
+                or not self.auto_trials
+                or self.trial_active
+                or self.trial_requested
+            ):
                 return
             topology = self.auto_topology
             num_agents = self.auto_num_agents
             discussion_rounds = self.auto_discussion_rounds
             ollama_options = self.auto_ollama_options
-        self.start_trial(topology, num_agents, discussion_rounds, ollama_options)
+            max_messages = self.auto_max_messages
+        self.start_trial(topology, num_agents, discussion_rounds, ollama_options, max_messages)
 
     def broadcast(self, payload, exclude=None, recipients=None):
         with self.lock:
@@ -523,8 +737,12 @@ class DashboardExperiment:
                 else:
                     selected = [sock for sock in self.turn_order if sock in self.clients][:needed]
                     missing = []
-            self.add_event("waiting", {"selected": len(selected), "needed": needed, "missing": missing})
+            waiting_state = (len(selected), needed, tuple(missing))
+            if waiting_state != self.last_waiting_event_state:
+                self.last_waiting_event_state = waiting_state
+                self.add_event("waiting", {"selected": len(selected), "needed": needed, "missing": missing})
             if len(selected) >= needed and not missing:
+                self.last_waiting_event_state = None
                 return selected
             time.sleep(2)
         return []
@@ -576,6 +794,101 @@ class DashboardExperiment:
                     return sock
         return None
 
+    def choose_next_sock(self, active_socks):
+        selected_name = None
+        with self.lock:
+            active_names = [
+                self.clients[sock]["name"]
+                for sock in active_socks
+                if sock in self.clients
+            ]
+            active_name_set = set(active_names)
+            if not self.scheduler_queue:
+                self.scheduler_queue = list(active_names)
+            else:
+                self.scheduler_queue = [
+                    name for name in self.scheduler_queue if name in active_name_set
+                ]
+                for name in active_names:
+                    if name not in self.scheduler_queue:
+                        self.scheduler_queue.append(name)
+
+            if not self.scheduler_queue:
+                return active_socks[0] if active_socks else None
+
+            min_messages = min(
+                self.messages_per_agent.get(name, 0)
+                for name in active_names
+            )
+            least_used = {
+                name
+                for name in active_names
+                if self.messages_per_agent.get(name, 0) == min_messages
+            }
+
+            for name in list(self.scheduler_queue):
+                if name in least_used and name in self.unread_agents:
+                    self.scheduler_queue.remove(name)
+                    self.scheduler_queue.append(name)
+                    self.unread_agents.discard(name)
+                    selected_name = name
+                    break
+
+            if selected_name is None:
+                for name in list(self.scheduler_queue):
+                    if name in least_used:
+                        self.scheduler_queue.remove(name)
+                        self.scheduler_queue.append(name)
+                        self.unread_agents.discard(name)
+                        selected_name = name
+                        break
+
+            if selected_name is None:
+                selected_name = self.scheduler_queue.pop(0)
+                self.scheduler_queue.append(selected_name)
+                self.unread_agents.discard(selected_name)
+
+        if selected_name:
+            return self.sock_by_name(active_socks, selected_name)
+        return active_socks[0] if active_socks else None
+
+    def record_valid_message(self, speaker, receivers):
+        with self.lock:
+            if self.start_time is None:
+                self.start_time = time.time()
+            self.message_count += 1
+            self.delivery_count += len(receivers)
+            self.messages_per_agent[speaker] = self.messages_per_agent.get(speaker, 0) + 1
+            for receiver in receivers:
+                if receiver and receiver != speaker:
+                    self.unread_agents.add(receiver)
+            return self.message_count
+
+    def answer_allowed_now(self, active_socks):
+        with self.lock:
+            active_names = [
+                self.clients[sock]["name"]
+                for sock in active_socks
+                if sock in self.clients
+            ]
+            if self.topology == "circle":
+                fallback_message_gate = min(CIRCLE_ANSWER_MESSAGE_GATE, max(self.max_messages - 1, 1))
+                return bool(active_names) and (
+                    all(self.messages_per_agent.get(name, 0) >= 1 for name in active_names)
+                    or self.message_count >= fallback_message_gate
+                )
+            return bool(active_names) and all(
+                self.messages_per_agent.get(name, 0) > 0
+                for name in active_names
+            )
+
+    def elapsed_since_first_message(self):
+        with self.lock:
+            start_time = self.start_time
+        if start_time is None:
+            return 0
+        return time.time() - start_time
+
     def recent_circle_messages(self, agent_id):
         return list(self.agent_histories.get(agent_id, [])[-5:])
 
@@ -587,26 +900,29 @@ class DashboardExperiment:
         if not contacts:
             return ""
         last_target = last_target_by_speaker.get(speaker)
-        for contact in contacts:
-            if contact != last_target:
-                return display_agent_name(contact)
-        return display_agent_name(contacts[0])
+        choices = [contact for contact in contacts if contact != last_target] or list(contacts)
+        return display_agent_name(random.choice(choices))
 
     def preferred_circle_neighbor(self, speaker):
-        return self.preferred_contact(
-            speaker,
-            self.circle_neighbors_by_name,
-            self.circle_last_target_by_speaker,
-        )
+        neighbors = self.circle_neighbors_by_name.get(speaker, [])
+        if not neighbors:
+            return ""
+        last_target = self.circle_last_target_by_speaker.get(speaker)
+        if last_target in neighbors and len(neighbors) > 1:
+            next_index = (neighbors.index(last_target) + 1) % len(neighbors)
+            return display_agent_name(neighbors[next_index])
+        return display_agent_name(neighbors[0])
 
     def send_turn_request(self, sock, speaker_id, speaker, round_number, can_answer):
+        message_count = self.message_count
         if self.topology == "circle":
             self.send_json(sock, {
                 "type": "your_turn",
                 "topology": "circle",
-                "round": round_number,
+                "round": message_count,
+                "message_count": message_count,
                 "can_answer": can_answer,
-                "discussion_rounds": self.discussion_rounds,
+                "discussion_rounds": None,
                 "ollama_options": self.ollama_options,
                 "agent_name": display_agent_name(speaker),
                 "your_symbols": self.cards[speaker],
@@ -618,9 +934,10 @@ class DashboardExperiment:
             self.send_json(sock, {
                 "type": "your_turn",
                 "topology": "chain",
-                "round": round_number,
+                "round": message_count,
+                "message_count": message_count,
                 "can_answer": can_answer,
-                "discussion_rounds": self.discussion_rounds,
+                "discussion_rounds": None,
                 "ollama_options": self.ollama_options,
                 "agent_name": display_agent_name(speaker),
                 "your_symbols": self.cards[speaker],
@@ -632,9 +949,10 @@ class DashboardExperiment:
             self.send_json(sock, {
                 "type": "your_turn",
                 "topology": "y",
-                "round": round_number,
+                "round": message_count,
+                "message_count": message_count,
                 "can_answer": can_answer,
-                "discussion_rounds": self.discussion_rounds,
+                "discussion_rounds": None,
                 "ollama_options": self.ollama_options,
                 "agent_name": display_agent_name(speaker),
                 "your_symbols": self.cards[speaker],
@@ -646,9 +964,10 @@ class DashboardExperiment:
             self.send_json(sock, {
                 "type": "your_turn",
                 "topology": "wheel",
-                "round": round_number,
+                "round": message_count,
+                "message_count": message_count,
                 "can_answer": can_answer,
-                "discussion_rounds": self.discussion_rounds,
+                "discussion_rounds": None,
                 "ollama_options": self.ollama_options,
                 "agent_name": display_agent_name(speaker),
                 "your_symbols": self.cards[speaker],
@@ -660,28 +979,32 @@ class DashboardExperiment:
             self.send_json(sock, {
                 "type": "your_turn",
                 "topology": "broadcast",
-                "round": round_number,
+                "round": message_count,
+                "message_count": message_count,
                 "can_answer": can_answer,
-                "discussion_rounds": self.discussion_rounds,
+                "discussion_rounds": None,
                 "ollama_options": self.ollama_options,
             })
 
     def route_private_message(self, topology, contacts_by_name, last_target_by_speaker, contact_label, text, speaker, speaker_id, active_socks, round_number, target, raw):
         valid_contacts = contacts_by_name.get(speaker, [])
         receiver = internal_agent_name(target) if target else ""
+        target_source = "agent"
         if receiver not in valid_contacts:
-            preferred = internal_agent_name(self.preferred_contact(speaker, contacts_by_name, last_target_by_speaker))
-            receiver = preferred if preferred in valid_contacts else (valid_contacts[0] if valid_contacts else "")
-        if not receiver:
-            self.add_event("invalid_route", {
-                "round": round_number,
-                "topology": topology,
-                "sender": display_agent_name(speaker),
-                "target": target,
-                contact_label: [display_agent_name(n) for n in valid_contacts],
-                "message": text,
-            })
-            return None
+            receiver = internal_agent_name(
+                self.preferred_contact(speaker, contacts_by_name, last_target_by_speaker)
+            )
+            target_source = "server_assigned"
+            if receiver not in valid_contacts:
+                self.add_event("invalid_route", {
+                    "round": round_number,
+                    "topology": topology,
+                    "sender": display_agent_name(speaker),
+                    "target": target,
+                    contact_label: [display_agent_name(n) for n in valid_contacts],
+                    "message": text,
+                })
+                return None
         receiver_sock = self.sock_by_name(active_socks, receiver)
         sent = receiver_sock and self.send_json(receiver_sock, {
             "type": "chat",
@@ -697,29 +1020,35 @@ class DashboardExperiment:
                 "sender": display_agent_name(speaker),
                 "text": text,
             })
+        message_number = self.record_valid_message(speaker, [receiver])
         return {
-            "round": round_number,
+            "round": message_number,
             "topology": topology,
             "sender": display_agent_name(speaker),
             "receiver": display_agent_name(receiver),
             "message": text,
             "raw": raw,
+            "target_source": target_source,
+            "elapsed": round(self.elapsed_since_first_message(), 2),
         }
 
     def route_chat_message(self, text, speaker, speaker_id, current_sock, active_socks, round_number, target=None, raw=""):
-        self.message_count += 1
         if self.topology == "circle":
             valid_neighbors = self.circle_neighbors_by_name.get(speaker, [])
             receiver = internal_agent_name(target) if target else target
+            target_source = "agent"
             if not receiver or receiver not in valid_neighbors:
-                self.add_event("invalid_route", {
-                    "round": round_number,
-                    "sender": display_agent_name(speaker),
-                    "target": target,
-                    "valid_neighbors": [display_agent_name(n) for n in valid_neighbors],
-                    "message": text,
-                })
-                return
+                receiver = internal_agent_name(self.preferred_circle_neighbor(speaker))
+                target_source = "server_assigned"
+                if receiver not in valid_neighbors:
+                    self.add_event("invalid_route", {
+                        "round": round_number,
+                        "sender": display_agent_name(speaker),
+                        "target": target,
+                        "valid_neighbors": [display_agent_name(n) for n in valid_neighbors],
+                        "message": text,
+                    })
+                    return False
             receiver_sock = self.sock_by_name(active_socks, receiver)
             sent = receiver_sock and self.send_json(receiver_sock, {
                 "type": "chat",
@@ -727,7 +1056,7 @@ class DashboardExperiment:
                 "text": text,
             })
             if not sent:
-                return
+                return False
             self.circle_last_target_by_speaker[speaker] = receiver
             receiver_id = get_agent_id(receiver)
             if receiver_id is not None:
@@ -735,13 +1064,16 @@ class DashboardExperiment:
                     "sender": display_agent_name(speaker),
                     "text": text,
                 })
+            message_number = self.record_valid_message(speaker, [receiver])
             route = {
-                "round": round_number,
+                "round": message_number,
                 "topology": "circle",
                 "sender": display_agent_name(speaker),
                 "receiver": display_agent_name(receiver),
                 "message": text,
                 "raw": raw,
+                "target_source": target_source,
+                "elapsed": round(self.elapsed_since_first_message(), 2),
             }
         elif self.topology == "chain":
             route = self.route_private_message(
@@ -758,7 +1090,7 @@ class DashboardExperiment:
                 raw,
             )
             if route is None:
-                return
+                return False
         elif self.topology == "y":
             route = self.route_private_message(
                 "y",
@@ -774,7 +1106,7 @@ class DashboardExperiment:
                 raw,
             )
             if route is None:
-                return
+                return False
         elif self.topology == "wheel":
             route = self.route_private_message(
                 "wheel",
@@ -790,25 +1122,33 @@ class DashboardExperiment:
                 raw,
             )
             if route is None:
-                return
+                return False
         else:
+            receivers = [
+                self.clients[sock]["name"]
+                for sock in active_socks
+                if sock != current_sock and sock in self.clients
+            ]
+            message_number = self.record_valid_message(speaker, receivers)
             self.broadcast(
                 {"type": "chat", "sender": display_agent_name(speaker), "text": text},
                 exclude=current_sock,
                 recipients=active_socks,
             )
             route = {
-                "round": round_number,
+                "round": message_number,
                 "topology": "broadcast",
                 "sender": display_agent_name(speaker),
                 "receiver": "ALL",
                 "message": text,
                 "raw": raw,
+                "elapsed": round(self.elapsed_since_first_message(), 2),
             }
 
         with self.lock:
             self.current_route = route
         self.add_event("chat", route)
+        return True
 
     def run_experiment(self):
         with self.lock:
@@ -827,11 +1167,17 @@ class DashboardExperiment:
             self.wheel_contacts_by_name = {}
             self.wheel_last_target_by_speaker = {}
             self.agent_histories = {i: [] for i in range(1, self.num_agents + 1)}
+            self.unread_agents = set()
+            self.scheduler_queue = []
+            self.messages_per_agent = {}
             self.message_count = 0
+            self.delivery_count = 0
+            self.start_time = None
             self.turn_count = 0
             self.round_number = 1
             self.current_route = None
             self.current_speaker = None
+            max_messages = self.max_messages
 
         active_socks = self.wait_for_clients(self.num_agents)
         if not active_socks:
@@ -841,18 +1187,26 @@ class DashboardExperiment:
                 "num_agents": self.num_agents,
                 "result": "stopped",
                 "success": False,
+                "temperature": self.ollama_options.get("temperature"),
+                "ollama_options": self.ollama_options,
                 "common_word": self.common_symbol,
+                "submitted_answer": None,
+                "correct_answer": self.common_symbol,
                 "final_answer_speaker": None,
                 "final_answer_word": None,
+                "submitted_figure_status": "Trial stopped",
                 "time_seconds": 0,
                 "total_messages": self.message_count,
+                "total_deliveries": self.delivery_count,
                 "total_turns": self.turn_count,
-                "rounds": 0,
+                "rounds": None,
                 "answer_round": None,
-                "max_rounds_reached": False,
+                "messages_before_answer": None,
+                "max_messages_reached": False,
                 "efficiency_explanation": "Trial stopped before all Jetsons were ready.",
-                "efficiency_max_rounds": get_hard_stop_round(self.topology, self.num_agents),
-                "discussion_rounds": self.discussion_rounds,
+                "efficiency_max_messages": max_messages,
+                "max_messages_per_trial": max_messages,
+                "discussion_rounds": None,
                 "stopped": True,
             }
             with self.lock:
@@ -869,6 +1223,7 @@ class DashboardExperiment:
         with self.lock:
             nicknames = [self.clients[sock]["name"] for sock in active_socks if sock in self.clients]
             self.common_symbol, self.cards, pool_size, figures_per_card = generate_jetson_sets(nicknames)
+            self.messages_per_agent = {name: 0 for name in nicknames}
             if self.topology == "circle":
                 self.circle_neighbors_by_name = self.build_circle_neighbors(active_socks)
             elif self.topology == "chain":
@@ -892,7 +1247,7 @@ class DashboardExperiment:
             "trial_id": trial_id,
             "topology": self.topology,
             "num_agents": self.num_agents,
-            "discussion_rounds": self.discussion_rounds,
+            "max_messages": max_messages,
             "ollama_options": self.ollama_options,
             "pool_size": pool_size,
             "figures_per_card": figures_per_card,
@@ -912,7 +1267,8 @@ class DashboardExperiment:
                 "figures_per_card": figures_per_card,
                 "pool_size": pool_size,
                 "topology": self.topology,
-                "discussion_rounds": self.discussion_rounds,
+                "discussion_rounds": None,
+                "max_messages": max_messages,
                 "ollama_options": self.ollama_options,
                 "circle_neighbors": [display_agent_name(n) for n in self.circle_neighbors_by_name.get(name, [])],
                 "chain_contacts": [display_agent_name(n) for n in self.chain_contacts_by_name.get(name, [])],
@@ -920,14 +1276,14 @@ class DashboardExperiment:
                 "wheel_recipients": [display_agent_name(n) for n in self.wheel_contacts_by_name.get(name, [])],
             })
 
-        start_time = time.time()
         answers = {}
-        answer_round = None
-        hard_stop_round = get_hard_stop_round(self.topology, self.num_agents)
-        hard_stop_round = max(hard_stop_round, self.discussion_rounds + 1)
+        answer_message_count = None
         trial_finished = False
-        max_rounds_reached = False
+        max_messages_reached = False
         stopped_by_user = False
+        scheduler_steps = 0
+        max_scheduler_steps = max_messages * max(self.num_agents, 1) * 4
+        initial_circle_socks = list(active_socks) if self.topology == "circle" else []
 
         while self.running and not trial_finished:
             with self.lock:
@@ -935,120 +1291,154 @@ class DashboardExperiment:
                     stopped_by_user = True
                     trial_finished = True
                     break
-                self.round_number = self.round_number or 1
-                round_number = self.round_number
-            if round_number > hard_stop_round:
-                max_rounds_reached = True
+                active_socks = [sock for sock in active_socks if sock in self.clients]
+                initial_circle_socks = [
+                    sock
+                    for sock in initial_circle_socks
+                    if sock in self.clients and sock in active_socks
+                ]
+            if self.message_count >= max_messages:
+                max_messages_reached = True
                 trial_finished = True
                 break
 
-            self.broadcast({"type": "system", "text": f"===== ROUND {round_number} ====="}, recipients=active_socks)
-            self.add_event("round_started", {"round": round_number})
+            if scheduler_steps >= max_scheduler_steps:
+                trial_finished = True
+                break
 
-            for current_sock in list(active_socks):
-                with self.lock:
-                    if self.stop_requested:
-                        stopped_by_user = True
-                        trial_finished = True
-                        break
-                    if current_sock not in self.clients:
-                        continue
-                    speaker = self.clients[current_sock]["name"]
-                    speaker_id = sock_agent_ids.get(current_sock)
-                    self.current_speaker = display_agent_name(speaker)
-                if speaker in answers:
+            current_sock = (
+                initial_circle_socks.pop(0)
+                if initial_circle_socks
+                else self.choose_next_sock(active_socks)
+            )
+            if current_sock is None:
+                trial_finished = True
+                break
+
+            with self.lock:
+                if current_sock not in self.clients:
                     continue
+                speaker = self.clients[current_sock]["name"]
+                speaker_id = sock_agent_ids.get(current_sock)
+                self.current_speaker = display_agent_name(speaker)
 
-                self.broadcast(
-                    {"type": "system", "text": f"[Waiting for {display_agent_name(speaker)} to respond]"},
-                    exclude=current_sock,
-                    recipients=active_socks,
-                )
-                can_answer = round_number > self.discussion_rounds
-                self.add_event("turn_started", {
-                    "round": round_number,
-                    "speaker": display_agent_name(speaker),
-                    "can_answer": can_answer,
-                })
-                self.send_turn_request(current_sock, speaker_id, speaker, round_number, can_answer)
-                resp = self.recv_turn_response(current_sock, total_timeout=300)
-                with self.lock:
-                    if self.stop_requested:
-                        stopped_by_user = True
-                        trial_finished = True
-                        break
+            can_answer = self.answer_allowed_now(active_socks)
+            self.add_event("turn_started", {
+                "message_count": self.message_count,
+                "speaker": display_agent_name(speaker),
+                "can_answer": can_answer,
+            })
+            self.send_turn_request(current_sock, speaker_id, speaker, self.message_count, can_answer)
+            resp = self.recv_turn_response(current_sock, total_timeout=300)
+            scheduler_steps += 1
 
-                if resp and resp.get("type") == "stopped":
+            with self.lock:
+                if self.stop_requested:
                     stopped_by_user = True
                     trial_finished = True
                     break
-                if resp is None:
-                    continue
-                if resp.get("type") == "timeout":
-                    with self.lock:
-                        self.turn_count += 1
-                    self.add_event("timeout", {"speaker": display_agent_name(speaker), "round": round_number})
-                    continue
 
-                if resp.get("type") == "chat":
-                    text = resp.get("text", "") or resp.get("raw", "")
-                    if text:
-                        self.route_chat_message(
-                            text,
-                            speaker,
-                            speaker_id,
-                            current_sock,
-                            active_socks,
-                            round_number,
-                            target=resp.get("target"),
-                            raw=resp.get("raw", ""),
-                        )
-                elif resp.get("type") == "answer":
-                    word = resp.get("word", resp.get("symbol", resp.get("text", ""))).strip()
-                    if can_answer:
-                        answers[speaker] = word
-                        answer_round = round_number
-                        self.add_event("answer", {
-                            "round": round_number,
-                            "speaker": display_agent_name(speaker),
-                            "word": word,
-                        })
-                        with self.lock:
-                            self.turn_count += 1
+            if resp and resp.get("type") == "stopped":
+                stopped_by_user = True
+                trial_finished = True
+                break
+            if resp is None:
+                pass
+            elif resp.get("type") == "timeout":
+                self.add_event("timeout", {"speaker": display_agent_name(speaker)})
+            elif resp.get("type") == "invalid":
+                self.add_event("invalid_output", {"speaker": display_agent_name(speaker)})
+            elif resp.get("type") == "chat":
+                text = resp.get("text", "")
+                if text:
+                    accepted = self.route_chat_message(
+                        text,
+                        speaker,
+                        speaker_id,
+                        current_sock,
+                        active_socks,
+                        self.message_count + 1,
+                        target=resp.get("target"),
+                        raw=resp.get("raw", ""),
+                    )
+                    if accepted and self.message_count >= max_messages:
+                        max_messages_reached = True
                         trial_finished = True
-                        break
-                    self.add_event("early_answer", {
-                        "round": round_number,
+            elif resp.get("type") == "answer":
+                raw_word = resp.get("word", resp.get("symbol", resp.get("text", ""))).strip()
+                word = normalize_figure_answer(raw_word)
+                if not word:
+                    self.add_event("invalid_output", {
                         "speaker": display_agent_name(speaker),
-                        "word": word,
+                        "reason": f"Invalid answer {raw_word!r}. Use one of: {', '.join(FIGURES)}.",
                     })
-
-                with self.lock:
-                    self.turn_count += 1
-                time.sleep(0.5)
+                    continue
+                if not can_answer:
+                    accepted = self.route_chat_message(
+                        f"I think the common figure may be {word}.",
+                        speaker,
+                        speaker_id,
+                        current_sock,
+                        active_socks,
+                        self.message_count + 1,
+                        target=resp.get("target"),
+                        raw=resp.get("raw", ""),
+                    )
+                    if accepted and self.message_count >= max_messages:
+                        max_messages_reached = True
+                        trial_finished = True
+                    continue
+                answers[speaker] = word
+                answer_message_count = self.message_count
+                self.add_event("answer", {
+                    "message_count": answer_message_count,
+                    "speaker": display_agent_name(speaker),
+                    "word": word,
+                })
+                trial_finished = True
 
             with self.lock:
-                self.round_number += 1
+                self.turn_count += 1
+            time.sleep(0.5)
+
+            with self.lock:
                 active_socks = [sock for sock in active_socks if sock in self.clients]
             if len(active_socks) < self.num_agents:
                 trial_finished = True
 
-        elapsed = time.time() - start_time
+        elapsed = self.elapsed_since_first_message()
         final_answer_speaker = next(reversed(answers), None) if answers else None
         final_answer_word = answers[final_answer_speaker] if final_answer_speaker else None
         found = bool(final_answer_word) and final_answer_word.strip().lower() == str(self.common_symbol).lower()
-        rounds_used = answer_round if answer_round is not None else max(self.round_number - 1, 0)
+        submitted_figure_status = final_answer_word
+        if not submitted_figure_status:
+            if stopped_by_user:
+                submitted_figure_status = "Trial stopped"
+            elif max_messages_reached:
+                submitted_figure_status = "No figure submitted (message limit reached)"
+            else:
+                submitted_figure_status = "No figure submitted"
+        displayed_messages_per_agent = {
+            display_agent_name(name): count
+            for name, count in self.messages_per_agent.items()
+        }
+        displayed_answers = {
+            display_agent_name(name): word
+            for name, word in answers.items()
+        }
+        messages_used = answer_message_count if answer_message_count is not None else self.message_count
         if stopped_by_user:
             efficiency_status = "stopped"
             efficiency_explanation = "Trial was stopped manually."
-            efficiency_max_rounds = get_hard_stop_round(self.topology, self.num_agents)
+            efficiency_max_messages = max_messages
         else:
-            efficiency_status, efficiency_explanation, efficiency_max_rounds = evaluate_efficiency(
+            efficiency_status, efficiency_explanation, efficiency_max_messages = evaluate_efficiency(
                 found,
                 bool(answers),
-                rounds_used,
+                messages_used,
                 self.num_agents,
                 self.topology,
+                max_messages,
             )
         result = {
             "trial_id": trial_id,
@@ -1056,18 +1446,32 @@ class DashboardExperiment:
             "num_agents": self.num_agents,
             "result": efficiency_status,
             "success": found,
+            "temperature": self.ollama_options.get("temperature"),
+            "ollama_options": self.ollama_options,
             "common_word": self.common_symbol,
+            "answering_agent": display_agent_name(final_answer_speaker) if final_answer_speaker else None,
+            "submitted_answer": final_answer_word,
+            "submitted_figure_status": submitted_figure_status,
+            "correct_answer": self.common_symbol,
+            "is_correct": found,
+            "message_count": self.message_count,
+            "delivery_count": self.delivery_count,
+            "messages_per_agent": displayed_messages_per_agent,
+            "answers": displayed_answers,
             "final_answer_speaker": display_agent_name(final_answer_speaker) if final_answer_speaker else None,
             "final_answer_word": final_answer_word,
             "time_seconds": round(elapsed, 2),
             "total_messages": self.message_count,
+            "total_deliveries": self.delivery_count,
             "total_turns": self.turn_count,
-            "rounds": rounds_used,
-            "answer_round": answer_round,
-            "max_rounds_reached": max_rounds_reached,
+            "rounds": None,
+            "answer_round": None,
+            "messages_before_answer": answer_message_count,
+            "max_messages_reached": max_messages_reached,
             "efficiency_explanation": efficiency_explanation,
-            "efficiency_max_rounds": efficiency_max_rounds,
-            "discussion_rounds": self.discussion_rounds,
+            "efficiency_max_messages": efficiency_max_messages,
+            "max_messages_per_trial": max_messages,
+            "discussion_rounds": None,
             "stopped": stopped_by_user,
         }
 
@@ -1118,10 +1522,11 @@ def make_handler(experiment, static_root):
 
             if self.path == "/api/start":
                 ok, message = experiment.start_trial(
-                    payload.get("topology", "broadcast"),
+                    payload.get("topology", "circle"),
                     payload.get("num_agents", 5),
                     payload.get("discussion_rounds"),
                     payload.get("ollama_options"),
+                    payload.get("max_messages"),
                 )
                 self.send_json_response(200 if ok else 409, {"ok": ok, "message": message})
                 return
@@ -1132,10 +1537,11 @@ def make_handler(experiment, static_root):
             if self.path == "/api/auto-trials":
                 ok, message = experiment.set_auto_trials(
                     payload.get("enabled", False),
-                    payload.get("topology", "broadcast"),
+                    payload.get("topology", "circle"),
                     payload.get("num_agents", 5),
                     payload.get("discussion_rounds"),
                     payload.get("ollama_options"),
+                    payload.get("max_messages"),
                 )
                 self.send_json_response(200 if ok else 409, {"ok": ok, "message": message})
                 return

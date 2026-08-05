@@ -21,6 +21,8 @@ The models run locally and do not require internet access during the experiment.
 
 The public demo reproduces the current dashboard with simulated Jetson agents, topology-based message routing, conversations, and trial results. It does not connect to the private Jetson network or expose live experiment data.
 
+![Leavitt Experiment public demo interface](Demo/public-demo-ui.png)
+
 ## Supported Topologies
 
 * 🌐 **Broadcast** - every agent can communicate with every other agent.

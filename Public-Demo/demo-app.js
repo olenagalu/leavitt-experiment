@@ -41,7 +41,7 @@ const topologyMeta = {
   },
   wheel: {
     label: "Wheel mode",
-    description: "Agent5 is the central hub. Other SLMs send through Agent5.",
+    description: "Agent3 is the central hub. Other SLMs send through Agent3.",
     defaultDiscussionRounds: 2,
     fixedAgents: 5,
   },
@@ -51,7 +51,7 @@ const topologyLinks = {
   circle: [[1, 2], [2, 3], [3, 4], [4, 5], [5, 1]],
   chain: [[1, 2], [2, 3], [3, 4], [4, 5]],
   y: [[1, 3], [2, 3], [3, 4], [4, 5]],
-  wheel: [[1, 5], [2, 5], [3, 5], [4, 5]],
+  wheel: [[1, 3], [2, 3], [3, 4], [3, 5]],
 };
 
 const demoScript = [
@@ -117,6 +117,7 @@ const state = {
   lastRoute: null,
   timer: null,
   results: [],
+  resultModes: [],
   lastFeedRound: null,
   chatHistories: {},
 };
@@ -154,7 +155,7 @@ function getPositions() {
     const layouts = {
       chain: { 1: [0.13, 0.5], 2: [0.31, 0.5], 3: [0.5, 0.5], 4: [0.69, 0.5], 5: [0.87, 0.5] },
       y: { 1: [0.27, 0.25], 2: [0.27, 0.75], 3: [0.5, 0.5], 4: [0.69, 0.5], 5: [0.87, 0.5] },
-      wheel: { 1: [0.28, 0.24], 2: [0.28, 0.76], 3: [0.72, 0.24], 4: [0.72, 0.76], 5: [0.5, 0.5] },
+      wheel: { 1: [0.28, 0.24], 2: [0.28, 0.76], 3: [0.5, 0.5], 4: [0.72, 0.76], 5: [0.72, 0.24] },
     };
     return list.map((agent) => {
       const [xRatio, yRatio] = layouts[state.mode][agent.id] || [0.5, 0.5];
@@ -396,11 +397,15 @@ function setLocked(locked) {
   clearResults.disabled = locked;
 }
 
+function modeDetailText(meta) {
+  return `SLM stands for small language model: a compact AI model that can run locally and exchange short messages. ${meta.description}`;
+}
+
 function syncCopy() {
   const meta = topologyMeta[state.mode];
   sourceLabel.textContent = "Static demo";
   modeTitle.textContent = meta.label;
-  modeDescription.textContent = `SLM stands for small language model: a compact AI model that can run locally and exchange short messages. ${meta.description}`;
+  modeDescription.textContent = modeDetailText(meta);
   agentCountValue.textContent = state.agentCount;
   agentCountGroup.hidden = state.mode !== "broadcast";
   renderChats();
@@ -427,21 +432,57 @@ function hideOverlay() {
 }
 
 function renderResults() {
+  rememberResultMode(state.mode);
   if (!state.results.length) {
-    resultsBody.innerHTML = `<tr><td colspan="7">No demo trials yet.</td></tr>`;
+    resultsBody.innerHTML = `${renderResultModeRow(state.mode)}<tr><td colspan="7">No demo trials yet.</td></tr>`;
     return;
   }
-  resultsBody.innerHTML = [...state.results].reverse().map((result) => `
-    <tr>
-      <td>${result.trial}</td>
-      <td>${escapeHtml(result.mode)}</td>
-      <td><span class="${result.success ? "result-good" : "result-bad"}">${result.success ? "success" : "stopped"}</span></td>
-      <td>circle</td>
-      <td><span class="${result.success ? "answer-correct" : "answer-wrong"}">${escapeHtml(result.answer)}</span></td>
-      <td>${result.rounds}</td>
-      <td>${result.seconds}s</td>
-    </tr>
-  `).join("");
+  resultsBody.innerHTML = renderResultSections();
+}
+
+function rememberResultMode(mode) {
+  if (!mode) {
+    return;
+  }
+  state.resultModes = [
+    mode,
+    ...state.resultModes.filter((savedMode) => savedMode !== mode),
+  ];
+}
+
+function renderResultSections() {
+  const modes = [
+    state.mode,
+    ...state.resultModes,
+    ...state.results.map((result) => result.mode),
+  ].filter(Boolean);
+  const orderedModes = [...new Set(modes)];
+  return orderedModes.map((mode) => {
+    const modeResults = state.results.filter((result) => result.mode === mode);
+    if (!modeResults.length) {
+      return mode === state.mode ? renderResultModeRow(mode) : "";
+    }
+    const resultRows = [...modeResults].reverse().map((result, index) => {
+      const trial = modeResults.length - index;
+      return `
+        <tr>
+          <td>${trial}</td>
+          <td>${escapeHtml(result.mode)}</td>
+          <td><span class="${result.success ? "result-good" : "result-bad"}">${result.success ? "success" : "stopped"}</span></td>
+          <td>circle</td>
+          <td><span class="${result.success ? "answer-correct" : "answer-wrong"}">${escapeHtml(result.answer)}</span></td>
+          <td>${result.rounds}</td>
+          <td>${result.seconds}s</td>
+        </tr>
+      `;
+    }).join("");
+    return `${renderResultModeRow(mode)}${resultRows}`;
+  }).join("");
+}
+
+function renderResultModeRow(mode) {
+  const label = topologyMeta[mode]?.label || mode || "-";
+  return `<tr><td><strong>Topology</strong></td><td colspan="6">${escapeHtml(label)}</td></tr>`;
 }
 
 function setMode(mode) {
@@ -456,6 +497,7 @@ function setMode(mode) {
   state.lastRoute = null;
   resetChatHistories();
   syncCopy();
+  renderResults();
   renderAgents();
   draw();
 }
@@ -639,6 +681,7 @@ clearFeed.addEventListener("click", () => {
 clearResults.addEventListener("click", () => {
   if (!state.running) {
     state.results = [];
+    state.resultModes = [];
     renderResults();
   }
 });

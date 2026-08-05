@@ -28,9 +28,6 @@
             <div class="control-group">
               <span class="group-label">Topology</span>
               <div class="segmented topology-segmented" role="tablist" aria-label="Topology mode">
-                <button class="segment" type="button" data-mode="broadcast" role="tab" aria-selected="false">
-                  Broadcast
-                </button>
                 <button class="segment active" type="button" data-mode="circle" role="tab" aria-selected="true">
                   Circle
                 </button>
@@ -42,6 +39,9 @@
                 </button>
                 <button class="segment" type="button" data-mode="wheel" role="tab" aria-selected="false">
                   Wheel
+                </button>
+                <button class="segment" type="button" data-mode="broadcast" role="tab" aria-selected="false">
+                  Broadcast
                 </button>
               </div>
             </div>
@@ -56,17 +56,18 @@
 
             <div class="control-group model-controls">
               <span class="group-label">Ollama settings</span>
+              <small class="model-readout">Model: <code id="activeModel" aria-live="polite">waiting for Jetsons</code></small>
               <label class="compact-label" for="ollamaTemperature">
                 <span>Temperature</span>
                 <input id="ollamaTemperature" class="number-input" type="number" min="0" max="2" step="0.1" value="0.2" title="Controls randomness. Lower values make agents more deterministic.">
               </label>
               <label class="compact-label" for="ollamaTopP">
                 <span>Top P</span>
-                <input id="ollamaTopP" class="number-input" type="number" min="0" max="1" step="0.1" value="0.7" title="Controls word-choice pool. Lower values reduce weird wording but may repeat more.">
+                <input id="ollamaTopP" class="number-input" type="number" min="0" max="1" step="0.1" value="1" title="Controls word-choice pool. Lower values reduce weird wording but may repeat more.">
               </label>
               <label class="compact-label" for="ollamaRepeatPenalty">
                 <span>Repeat penalty</span>
-                <input id="ollamaRepeatPenalty" class="number-input" type="number" min="0" max="3" step="0.1" value="1.2" title="Reduces repeated phrases; too high can make wording unnatural.">
+                <input id="ollamaRepeatPenalty" class="number-input" type="number" min="0" max="3" step="0.1" value="1" title="1 means no repeat penalty. Higher values reduce repetitiveness.">
               </label>
               <label class="compact-label" for="ollamaNumPredict">
                 <span>Response length</span>
@@ -78,7 +79,15 @@
               <span class="group-label">Trial limit</span>
               <label class="compact-label" for="maxMessages">
                 <span>Max messages</span>
-                <input id="maxMessages" class="number-input" type="number" min="1" max="500" step="1" value="50">
+                <input id="maxMessages" class="number-input" type="number" min="1" max="500" step="1" value="40">
+              </label>
+            </div>
+
+            <div class="control-group model-controls">
+              <span class="group-label">Study cooling</span>
+              <label class="compact-label" for="temperaturePauseMinutes">
+                <span>Between temperatures (minutes)</span>
+                <input id="temperaturePauseMinutes" class="number-input" type="number" min="0" max="180" step="1" value="5">
               </label>
             </div>
 
@@ -93,6 +102,9 @@
               <button id="startTrial" class="primary-button" type="button">Start Trial</button>
               <button id="stopTrial" class="danger-button" type="button" disabled>Stop trial</button>
               <button id="autoTrials" class="text-button" type="button" aria-pressed="false">Auto trials</button>
+              <button id="fullStudy" class="text-button" type="button" aria-pressed="false" title="Run 50 trials at temperatures 0, 0.5, and 1 for Broadcast, Circle, Y, Wheel, and Chain.">Run Full Study</button>
+              <button id="leavittStudy" class="text-button" type="button" aria-pressed="false" title="Run 50 trials at temperatures 0, 0.5, and 1 for Circle, Y, Wheel, and Chain.">Run Leavitt Study</button>
+              <button id="powerOffJetsons" class="danger-button" type="button">Power off all Jetsons</button>
               <button id="restartClients" class="text-button" type="button">Restart fresh</button>
             </div>
 
@@ -111,7 +123,7 @@
               <strong>Model parameter notes</strong>
               <p>Temperature: controls randomness. Lower = more consistent.</p>
               <p>Top-p: controls word-choice pool. Lower = less weird wording.</p>
-              <p>Repeat penalty: reduces repeated phrases. Too high can sound unnatural.</p>
+              <p>Repeat penalty: 1 = no penalty. Higher values reduce repetitiveness.</p>
               <p>Num predict: limits reply length.</p>
             </div>
           </aside>
@@ -198,6 +210,6 @@
       </section>
     </main>
 
-    <script src="app.js?v=20260709-figures-routes"></script>
+    <script src="app.js?v=20260723-study-presets"></script>
   </body>
 </html>

@@ -1,0 +1,77 @@
+Leavitt Experiment Notes
+
+Use Wi-Fi: TP-Link_9954
+
+Run the site
+
+1. Open Terminal on the server Jetson.
+
+2. Go to the project folder:
+
+   cd Desktop/leavitt-experiment
+
+3. Start the dashboard server so the Jetsons can connect:
+
+   sudo python3 Site/dashboard_server.py --http-host 0.0.0.0 --http-port 80 --tcp-host 0.0.0.0 --tcp-port 5001
+
+4. Open a browser and go to:
+
+   http://192.168.0.140
+
+Run the complete automated study
+
+1. Wait until all 5 Jetsons show as connected in the dashboard.
+
+2. Click "Run full study" once.
+
+   The dashboard defaults to a 5-minute pause between temperature batches and a
+   15-minute pause between topologies. Change these two values in "Full-study
+   cooling" before starting if needed.
+
+3. Leave the dashboard server and all client services running. The server will run
+   50 trials for each topology at temperature 0, 0.5, and 1: 750 trials total.
+
+4. Results are saved on the server Jetson in:
+
+   ~/Desktop/leavitt-report/<timestamp>-full-study/
+
+   Each topology/temperature folder contains metadata.json, trials.jsonl,
+   messages.jsonl, and report.md. The full-study folder also contains an overall
+   metadata.json and report.md. Every completed batch report includes its 50-round
+   success table, temperature, success rate, average messages, average time, and
+   agent-to-agent recipient-choice probabilities.
+
+   During every cooling pause, the server requests thermal-zone readings from all
+   five Jetsons at the start, every minute, and at the end. These are saved in
+   temperatures.jsonl and summarized in the full-study report.
+
+Important: deploy the updated Main/client.py to every client Jetson before running
+the study. Older clients do not understand temperature requests; the study will
+continue, but their temperature values will be recorded as unavailable.
+
+Power off after the full study
+
+After the fifteenth batch is saved and the full-study report is marked complete,
+the dashboard automatically powers off jetson1 through jetson5 over SSH and then
+powers off the server Jetson last. If any client command fails, the server stays on
+and records the failure in poweroff-log.jsonl.
+
+Before the long run, click "Check power-off readiness". It does not shut anything
+down. It verifies that the dashboard is running on a Jetson and that the server can
+reach every client with passwordless SSH and passwordless sudo permission for:
+
+   /usr/bin/systemctl poweroff
+
+If permission is missing, use visudo on each affected Jetson to grant the dashboard
+SSH user only the required command. For the current minds_user setup, the sudoers
+entry is:
+
+   minds_user ALL=(root) NOPASSWD: /usr/bin/systemctl poweroff
+
+The "Power off all Jetsons" button performs a real shutdown test after showing a
+confirmation dialog. Use it only when you are ready to manually power the Jetsons
+back on.
+
+Set LEAVITT_DATA_DIR before starting the dashboard server only if a different
+report location is needed. When the server is started with sudo, the default path
+still uses the original desktop user's home directory rather than /root.

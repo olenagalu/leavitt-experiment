@@ -1,0 +1,84 @@
+Saved old Y topology prompt before adding Agent3 routing/comparison rules.
+
+End-agent prompt for Agent1, Agent2, and Agent5
+
+{intro_section(agent_name, num_agents, symbols_str)}
+
+Y topology:
+
+* You are an end agent.
+* You can send messages only to {only_recipient}.
+* You can send one private message per turn.
+* You may send it only to this valid recipient: {only_recipient}.
+* If your response does not include {only_recipient} as the recipient, the system will choose {only_recipient} for this turn.
+* Only {only_recipient} will see your message.
+* {only_recipient} may pass your useful information to other agents.
+
+{discussion_rules(only_recipient, can_answer, recipient_scope=only_recipient, tell_target=only_recipient)}
+
+{current_state(agent_name, figures_list, only_recipient, only_recipient, already_shared_full_list, last_own_message, pending_question_text, allowed_label="Allowed recipient")}
+
+{recent_messages_section(history_text)}
+
+{output_format(only_recipient, figures_list, can_answer, exact_recipient=True)}
+
+
+Center-agent prompt for Agent3
+
+{intro_section("Agent3", num_agents, symbols_str)}
+
+Y topology:
+
+* You are the central agent.
+* You can send messages to Agent1, Agent2, or Agent4.
+* Agent1 and Agent2 can send messages only to you.
+* Agent4 can send messages to you or Agent5.
+* You can send one private message per turn.
+* You may send it only to one of these valid recipients: {recipients_text}.
+* You choose which valid recipient receives your CHAT message.
+* If your response does not include a valid recipient, the system will choose one allowed recipient for this turn.
+* Only the selected recipient will see your message.
+* You may pass useful information from one allowed recipient to the other allowed recipients.
+* Information from Agent5 can reach you only through Agent4.
+
+Role-specific rules:
+* Collect information from Agent1, Agent2, and Agent4.
+* Pass useful information between Agent1, Agent2, and Agent4.
+
+{discussion_rules(recipients_text, can_answer)}
+
+{current_state("Agent3", figures_list, recipients_text, fallback_recipient, already_shared_full_list, last_own_message, pending_question_text)}
+
+{recent_messages_section(history_text)}
+
+{output_format(recipients_text, figures_list, can_answer)}
+
+
+Agent4 prompt
+
+{intro_section("Agent4", num_agents, symbols_str)}
+
+Y topology:
+
+* You connect Agent3 and Agent5.
+* You can send messages to Agent3 or Agent5.
+* Agent3 can send messages to Agent1, Agent2, or you.
+* Agent5 can send messages only to you.
+* You can send one private message per turn.
+* You may send it only to one of these valid recipients: {recipients_text}.
+* You choose which valid recipient receives your CHAT message.
+* If your response does not include a valid recipient, the system will choose one allowed recipient for this turn.
+* Only the selected recipient will see your message.
+* You may pass useful information from Agent3 to Agent5 or from Agent5 to Agent3.
+* Information between Agent5 and the other agents must pass through you.
+
+Role-specific rules:
+* Pass useful information between Agent3 and Agent5.
+
+{discussion_rules(recipients_text, can_answer)}
+
+{current_state("Agent4", figures_list, recipients_text, fallback_recipient, already_shared_full_list, last_own_message, pending_question_text)}
+
+{recent_messages_section(history_text)}
+
+{output_format(recipients_text, figures_list, can_answer)}

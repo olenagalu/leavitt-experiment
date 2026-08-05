@@ -7,6 +7,8 @@ This module is imported by client.py and is not intended to run directly.
 import random
 import re
 
+from shared_features_client import current_state, discussion_rules, format_history, intro_section, output_format, recent_messages_section
+
 
 DEBUG = False
 def normalize_agent_name(name):
@@ -36,128 +38,100 @@ def build_y_prompt(
     figures_list = ", ".join(my_symbols)
     recipients_text = ", ".join(y_contacts)
     fallback_recipient = preferred_contact or (random.choice(y_contacts) if y_contacts else "")
-    preferred_text = fallback_recipient or "choose one valid recipient"
-    shared_full_list_text = "yes" if already_shared_full_list else "no"
-    recent_sources_text = ", ".join(y_contacts) if y_contacts else "VALID RECIPIENTS"
+    history_text = format_history(conversation_history)
     normalized_agent = normalize_agent_name(agent_name)
-    if normalized_agent == "Agent3":
-        role_text = "the junction agent"
-        movement_rule = "Agent1 and Agent2 can only reach the group through you. Agent5 can only be reached through Agent4."
-    elif normalized_agent == "Agent4":
-        role_text = "the bridge agent"
-        movement_rule = "Agent5 can only reach the group through you. Help useful information move between Agent3 and Agent5."
-    elif len(y_contacts) == 1:
-        role_text = "an endpoint agent"
-        movement_rule = "Information from the rest of the group must come through your valid recipient."
-    else:
-        role_text = "an agent"
-        movement_rule = "Help useful information move through your part of the Y."
 
-    history_text = ""
-    for msg in conversation_history[-15:]:
-        sender = msg.get("sender", "SYSTEM")
-        text = msg.get("text", "")
-        history_text += f"[{sender}]: {text}\n"
+    if normalized_agent in ("Agent1", "Agent2", "Agent5"):
+        only_recipient = y_contacts[0] if y_contacts else fallback_recipient
+        if normalized_agent == "Agent5":
+            route_rule = "* Send your full figure list and useful evidence to Agent4 so it can reach Agent3."
+        else:
+            route_rule = "* Send your full figure list and useful evidence to Agent3."
+        return f"""
+{intro_section(agent_name, num_agents, symbols_str)}
 
-    if not history_text:
-        history_text = "(No received messages yet.)\n"
+Y topology:
 
-    answer_priority = (
-        f"7. Submit ANSWER only as one of your own figure words ({figures_list}) and only when that figure has support from received messages as the strongest common candidate."
-        if can_answer
-        else "7. Do not submit ANSWER yet. Send one useful discussion message instead."
-    )
-    answer_rule = (
-        "* Submit ANSWER only when one figure in your own private list is clearly supported by received messages."
-        if can_answer
-        else "* Do not submit ANSWER yet. Keep sharing or comparing useful figure information."
-    )
-    answer_output = (
-        f"""
-or:
+* You are an end agent.
+* You can send messages only to {only_recipient}.
+* You can send one private message per turn.
+* You may send it only to this valid recipient: {only_recipient}.
+* If your response does not include {only_recipient} as the recipient, the system will choose {only_recipient} for this turn.
+* Only {only_recipient} will see your message.
+* {only_recipient} may pass your useful information to other agents.
 
-ACTION: ANSWER
-WORD: <one of: {figures_list}>
+Role-specific rules:
+{route_rule}
+* Let Agent3 compare the lists and submit the final answer.
+
+{discussion_rules(only_recipient, can_answer, recipient_scope=only_recipient, tell_target=only_recipient)}
+
+{current_state(agent_name, figures_list, only_recipient, only_recipient, already_shared_full_list, last_own_message, pending_question_text, allowed_label="Allowed recipient")}
+
+{recent_messages_section(history_text)}
+
+{output_format(only_recipient, figures_list, can_answer, exact_recipient=True)}
 """
-        if can_answer
-        else ""
-    )
 
-    turn_block = f"""
-YOUR TURN:
-You must send exactly one valid message or answer this turn. Do not stay silent.
+    if normalized_agent == "Agent3":
+        return f"""
+{intro_section("Agent3", num_agents, symbols_str)}
 
-Decision priority:
-1. You are {agent_name}. Speak only as {agent_name}.
-2. If "Question you should answer now" is not none, send a private reply to the agent who asked that question.
-3. If you have not shared your full private figure list yet, send your full private figure list to one valid recipient.
-4. After your full private figure list has been shared, compare received messages with your own list and send one useful discussion message.
-5. If a discussed or proposed figure is not in your private list, reject it and redirect discussion toward figures that overlap with your own list and received messages.
-6. If a discussed or proposed figure is in your private list, confirm it or pass that useful information to another valid recipient.
-{answer_priority}
-8. You must output exactly one valid action this turn. Do not stay silent.
+Y topology:
 
-Output exactly one:
+* You are the central agent.
+* You can send messages to Agent1, Agent2, or Agent4.
+* Agent1 and Agent2 can send messages only to you.
+* Agent4 can send messages to you or Agent5.
+* You can send one private message per turn.
+* You may send it only to one of these valid recipients: {recipients_text}.
+* You choose which valid recipient receives your CHAT message.
+* If your response does not include a valid recipient, the system will choose one allowed recipient for this turn.
+* Only the selected recipient will see your message.
+* You may pass useful information from one allowed recipient to the other allowed recipients.
+* Information from Agent5 can reach you only through Agent4.
 
-ACTION: CHAT
-TO: <one of: {recipients_text}>
-MESSAGE: <short useful message>
-{answer_output}
-Do not copy these instructions or placeholder words into your response.
+Role-specific rules:
+* Collect figure information from Agent1, Agent2, and Agent4.
+* Compare the received lists with your own list and submit the shared figure when confirmed.
+
+{discussion_rules(recipients_text, can_answer)}
+
+{current_state("Agent3", figures_list, recipients_text, fallback_recipient, already_shared_full_list, last_own_message, pending_question_text)}
+
+{recent_messages_section(history_text)}
+
+{output_format(recipients_text, figures_list, can_answer)}
 """
 
     return f"""
-You are {agent_name}. Speak only as {agent_name}.
-You are {role_text} in a Y topology.
-
-Your figures:
-{symbols_str}
-
-Goal:
-Find the one figure shared by all agents.
-Reach the correct answer using as few total messages across all agents as possible.
-
-Your valid recipients:
-{recipients_text}
+{intro_section("Agent4", num_agents, symbols_str)}
 
 Y topology:
-* You can send only one private message per turn.
-* You choose exactly one valid Y recipient for each CHAT message: {recipients_text}.
+
+* You connect Agent3 and Agent5.
+* You can send messages to Agent3 or Agent5.
+* Agent3 can send messages to Agent1, Agent2, or you.
+* Agent5 can send messages only to you.
+* You can send one private message per turn.
+* You may send it only to one of these valid recipients: {recipients_text}.
+* You choose which valid recipient receives your CHAT message.
 * If your response does not include a valid recipient, the system will choose one allowed recipient for this turn.
 * Only the selected recipient will see your message.
-* You cannot talk directly to agents outside your valid recipients.
-* {movement_rule}
-* Do not assume that all agents saw every message.
+* You may pass useful information from Agent3 to Agent5 or from Agent5 to Agent3.
+* Information between Agent5 and the other agents must pass through you.
 
-Rules:
-* Use only your figures and messages you received.
-* If "Question you should answer now" is not none, send your message to the agent who asked and answer that question first.
-* Share your full figure list with a recipient only once.
-* After you already shared your full list with someone, do not list all figures again for that same recipient.
-* Compare received messages with your own list.
-* Ask for missing figure lists only if needed.
-* Do not keep asking about one specific figure. Ask for a missing full list once, or share a comparison/update.
-* If another agent proposes a figure that is not in your own list, say you do not have that figure and redirect discussion toward figures that overlap with your own list and received messages.
-{answer_rule}
-* Never submit ANSWER for a figure that is not in your own list.
-* You must send exactly one valid message or answer this turn. Do not stay silent.
-* Do not repeat your previous message.
+Role-specific rules:
+* Pass your own and Agent5's useful figure information to Agent3.
+* Pass Agent3's useful information back to Agent5 when needed.
 
-CURRENT STATE:
+{discussion_rules(recipients_text, can_answer)}
 
-* You are: {agent_name}
-* Total agents: {num_agents}
-* Your figures: {figures_list}
-* Valid recipients for {agent_name}: {recipients_text}
-* Suggested recipient for this turn if you need a default: {preferred_text}
-* You already shared your figures: {shared_full_list_text}
-* Your previous message: {last_own_message}
-* Question you should answer now: {pending_question_text}
+{current_state("Agent4", figures_list, recipients_text, fallback_recipient, already_shared_full_list, last_own_message, pending_question_text)}
 
-RECENT MESSAGES RECEIVED FROM {recent_sources_text}:
-{history_text}
+{recent_messages_section(history_text)}
 
-{turn_block}
+{output_format(recipients_text, figures_list, can_answer)}
 """
 
 

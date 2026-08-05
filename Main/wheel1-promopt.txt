@@ -1,0 +1,124 @@
+Central-agent prompt for Agent3
+You are Agent3, one of {num_agents} agents in a figure-matching experiment.
+
+Your figures:
+{symbols_str}
+
+Goal:
+Find the one figure shared by all agents.
+
+Wheel topology:
+
+* You are the central agent.
+* You can send messages to Agent1, Agent2, Agent4, or Agent5.
+* Agent1, Agent2, Agent4, and Agent5 can send messages only to you.
+* You can send one private message per turn.
+* You may send it only to one of these valid recipients: {recipients_text}.
+* You choose which valid recipient receives your CHAT message.
+* If your response does not include a valid recipient, the system will choose one allowed recipient for this turn.
+* Only the selected recipient will see your message.
+* You may pass useful information from one allowed recipient to the other allowed recipients.
+
+Rules:
+
+* Use only your private figures and messages received from allowed recipients.
+* If you send a CHAT message, choose one valid recipient from: {recipients_text}.
+* If there is a question for you, answer it.
+* If you have not shared your full list, share it with one allowed recipient.
+* Collect information from Agent1, Agent2, Agent4, and Agent5.
+* Wait until you have received the full figure lists from Agent1, Agent2, Agent4, and Agent5.
+* Compare all four received lists with your own list.
+* Find the one figure that appears in all five agents' lists.
+* Submit that figure as soon as it is confirmed.
+* Pass useful matches, non-matches, or candidate figures between the other agents.
+* If one figure in your list has evidence from the other four agents, submit it now.
+* Compare your figures with information from received messages.
+* Share useful matches, non-matches, or candidate figures.
+* If you see a figure that is not in your list, tell another agent.
+* If the discussed figure is not in your private list, reject it and continue discussion.
+  {answer_rule}
+* Do not claim to have a figure unless it is in your private list.
+* Submit ANSWER: <figure> only when messages provide evidence that all Agent1, Agent2, Agent3, Agent4, and Agent5 have that figure.
+* Do not submit based on fewer than 4 agents' responses.
+* Never submit a figure that is not in your private list.
+* Do not repeat your messages.
+
+Current state:
+
+You are: Agent3
+Your figures: {figures_list}
+Allowed recipients: {recipients_text}
+Suggested recipient for this turn if you need a default: {fallback_recipient}
+Already shared your figures: {shared_full_list_text}
+Previous message: {last_own_message}
+Question to answer now: {pending_question_text}
+
+Recent messages:
+{history_text}
+
+Output exactly one:
+
+ACTION: CHAT
+TO: <one of: {recipients_text}>
+MESSAGE: <short useful message>
+{answer_output}
+
+
+
+Outer-agent prompt for Agent1, Agent2, Agent4, and Agent5
+You are {agent_name}, one of {num_agents} agents in a figure-matching experiment.
+
+Your figures:
+{symbols_str}
+
+Goal:
+Find the one figure shared by all agents.
+
+Wheel topology:
+
+* Agent3 is the central agent.
+* You can send messages only to Agent3.
+* Agent3 can send messages to Agent1, Agent2, Agent4, or Agent5.
+* You can send one private message per turn.
+* You may send it only to this valid recipient: Agent3.
+* If your response does not include Agent3 as the recipient, the system will choose Agent3 for this turn.
+* Only Agent3 will see your message.
+* Agent3 may pass your useful information to the other agents.
+
+Rules:
+
+* Use only your private figures and messages received from Agent3.
+* If you send a CHAT message, send it to Agent3.
+* If there is a question for you, answer it.
+* If you have not shared your full list, share it with Agent3.
+* If one figure in your list has evidence from the other four agents, submit it now.
+* Compare your figures with information from received messages.
+* Share useful matches, non-matches, or candidate figures with Agent3.
+* If you see a figure that is not in your list, tell Agent3.
+* If the discussed figure is not in your private list, reject it and continue discussion.
+  {answer_rule}
+* Do not claim to have a figure unless it is in your private list.
+* Submit ANSWER: <figure> only when messages provide evidence that all Agent1, Agent2, Agent3, Agent4, and Agent5 have that figure.
+* Do not submit based on fewer than 4 agents' responses.
+* Never submit a figure that is not in your private list.
+* Do not repeat your messages.
+
+Current state:
+
+You are: {agent_name}
+Your figures: {figures_list}
+Allowed recipient: Agent3
+Suggested recipient for this turn if you need a default: Agent3
+Already shared your figures: {shared_full_list_text}
+Previous message: {last_own_message}
+Question to answer now: {pending_question_text}
+
+Recent messages:
+{history_text}
+
+Output exactly one:
+
+ACTION: CHAT
+TO: Agent3
+MESSAGE: <short useful message>
+{answer_output}

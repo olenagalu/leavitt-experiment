@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Leavitt Experiment Project</title>
+    <link rel="stylesheet" href="project.css">
+  </head>
+  <body>
+    <main class="page-shell">
+      <header class="project-hero">
+        <nav class="top-nav" aria-label="Project navigation">
+          <a class="brand" href="index.html" aria-label="Open live dashboard">
+            <img src="minds-logo.png" alt="MINDS logo">
+            <span>MINDS Leavitt</span>
+          </a>
+          <a class="dashboard-link" href="index.html">Open dashboard</a>
+        </nav>
+
+        <div class="hero-grid">
+          <div class="hero-copy">
+            <p class="eyebrow">Revisiting the Bavelas-Leavitt Experiment</p>
+            <h1>Distributed SLM agents search for one shared figure.</h1>
+            <p class="lede">
+              This project coordinates Jetson devices running local Ollama models. A dashboard server assigns private figure cards, controls communication topology, streams every message, and records whether the agents identify the one figure shared by all participants.
+            </p>
+          </div>
+
+          <div class="summary-panel" aria-label="Project summary">
+            <div>
+              <span>Runtime</span>
+              <strong>Python + static HTML/CSS/JS</strong>
+            </div>
+            <div>
+              <span>Agents</span>
+              <strong>2-5 Jetsons</strong>
+            </div>
+            <div>
+              <span>Model</span>
+              <strong>Local Ollama / Gemma</strong>
+            </div>
+            <div>
+              <span>Protocol</span>
+              <strong>Newline-delimited JSON over TCP</strong>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <section class="section-band overview-band" aria-labelledby="overview-title">
+        <div class="section-heading">
+          <p class="eyebrow">What it does</p>
+          <h2 id="overview-title">The experiment loop</h2>
+        </div>
+        <div class="loop-grid">
+          <article>
+            <span class="step-number">1</span>
+            <h3>Assign private figure cards</h3>
+            <p>The server samples figures so exactly one symbol is common to every active agent while each agent still has a private list.</p>
+          </article>
+          <article>
+            <span class="step-number">2</span>
+            <h3>Route topology-limited turns</h3>
+            <p>Broadcast, circle, chain, Y, and wheel modes decide which agents can see or receive each message.</p>
+          </article>
+          <article>
+            <span class="step-number">3</span>
+            <h3>Ask local SLMs for actions</h3>
+            <p>Each Jetson builds a prompt from its state and visible history, calls Ollama, and returns either CHAT or ANSWER.</p>
+          </article>
+          <article>
+            <span class="step-number">4</span>
+            <h3>Score and display results</h3>
+            <p>The dashboard shows live routes, chat history, model settings, submitted answers, and success or failure.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section-band diagram-band" aria-labelledby="diagram-title">
+        <div class="section-heading">
+          <p class="eyebrow">File diagram</p>
+          <h2 id="diagram-title">How the project files work together</h2>
+        </div>
+
+        <div class="file-diagram" aria-label="Project file diagram with descriptions">
+          <article class="file-node server-node">
+            <span class="node-kicker">Dashboard server</span>
+            <h3>Site/dashboard_server.py</h3>
+            <p>Runs the HTTP dashboard and the TCP experiment coordinator. It accepts Jetson connections, starts trials, assigns figure cards, routes topology-specific messages, and records results.</p>
+            <dl>
+              <dt>Reads</dt>
+              <dd>Dashboard API requests and Jetson JSON messages.</dd>
+              <dt>Sends</dt>
+              <dd>Trial state, turn payloads, event-stream updates, and scored results.</dd>
+            </dl>
+          </article>
+
+          <div class="connector connector-a" aria-hidden="true">HTTP + SSE</div>
+          <div class="connector connector-b" aria-hidden="true">TCP JSON</div>
+          <div class="connector connector-c" aria-hidden="true">Prompt build</div>
+
+          <article class="file-node ui-node">
+            <span class="node-kicker">Browser UI</span>
+            <h3>Site/index.html</h3>
+            <p>Defines the live dashboard layout: topology controls, model settings, animated network stage, event feed, chat panel, and success table.</p>
+            <dl>
+              <dt>Uses</dt>
+              <dd><code>Site/styles.css</code> for layout and visual states.</dd>
+              <dt>Loads</dt>
+              <dd><code>Site/app.js</code> for live updates and interactions.</dd>
+            </dl>
+          </article>
+
+          <article class="file-node app-node">
+            <span class="node-kicker">Dashboard behavior</span>
+            <h3>Site/app.js</h3>
+            <p>Connects to the dashboard APIs, renders the network canvas, updates metrics, tracks chat history, and sends start, stop, clear, auto-trial, and restart commands.</p>
+            <dl>
+              <dt>Reads</dt>
+              <dd><code>/api/state</code> and <code>/api/events</code>.</dd>
+              <dt>Writes</dt>
+              <dd>Dashboard DOM, canvas animation, and control POST requests.</dd>
+            </dl>
+          </article>
+
+          <article class="file-node client-node">
+            <span class="node-kicker">Jetson client</span>
+            <h3>Main/client.py</h3>
+            <p>Runs on each Jetson. It connects to the server, performs the hostname handshake, receives turn payloads, calls Ollama, parses the model response, and returns structured actions.</p>
+            <dl>
+              <dt>Calls</dt>
+              <dd>Local Ollama at <code>127.0.0.1:11434</code>.</dd>
+              <dt>Returns</dt>
+              <dd>CHAT messages, ANSWER submissions, timeouts, and status events.</dd>
+            </dl>
+          </article>
+
+          <article class="file-node topology-node">
+            <span class="node-kicker">Topology prompts</span>
+            <h3>Main/circle_client.py<br>Main/chain_client.py<br>Main/y_client.py<br>Main/wheel_client.py</h3>
+            <p>Build topology-specific prompts and parse model output for private-message modes. Each file encodes who the agent can contact and how messages should be formatted.</p>
+            <dl>
+              <dt>Specializes</dt>
+              <dd>Circle neighbors, chain adjacency, Y branches, and wheel hub routing.</dd>
+              <dt>Exports</dt>
+              <dd>Prompt builders and response parsers used by <code>Main/client.py</code>.</dd>
+            </dl>
+          </article>
+
+          <article class="file-node shared-node">
+            <span class="node-kicker">Shared prompt text</span>
+            <h3>Main/shared_features_client.py</h3>
+            <p>Centralizes common prompt sections: experiment introduction, allowed figures, recent history, current state, answer rules, and output format instructions.</p>
+            <dl>
+              <dt>Keeps consistent</dt>
+              <dd>Agent goals, answer criteria, and anti-hallucination rules.</dd>
+              <dt>Used by</dt>
+              <dd>Every topology-specific prompt module.</dd>
+            </dl>
+          </article>
+        </div>
+      </section>
+
+      <section class="section-band repo-band" aria-labelledby="repo-title">
+        <div class="section-heading">
+          <p class="eyebrow">Repository map</p>
+          <h2 id="repo-title">Files a reader should know first</h2>
+        </div>
+
+        <div class="repo-grid">
+          <pre class="tree" aria-label="Repository tree">leavitt-experiment/
+|-- Site/
+|   |-- dashboard_server.py
+|   |-- index.html
+|   |-- styles.css
+|   |-- app.js
+|   |-- project.html
+|   `-- project.css
+|-- Main/
+|   |-- client.py
+|   |-- shared_features_client.py
+|   |-- circle_client.py
+|   |-- chain_client.py
+|   |-- y_client.py
+|   `-- wheel_client.py
+|-- Public-Demo/
+|   |-- index.html
+|   |-- styles.css
+|   `-- demo-app.js
+|-- Demo/
+|-- Old/
+|-- outputs/
+`-- notes.txt</pre>
+
+          <div class="file-list">
+            <article>
+              <h3>Site/</h3>
+              <p>The live presentation layer and server entry point. Run <code>Site/dashboard_server.py</code> to serve the dashboard and listen for Jetsons.</p>
+            </article>
+            <article>
+              <h3>Main/</h3>
+              <p>The Jetson-side runtime. Copy or sync these files to devices so each one can connect back to the dashboard server.</p>
+            </article>
+            <article>
+              <h3>Public-Demo/ and Demo/</h3>
+              <p>Static versions of the dashboard experience for demonstrations without live Jetson clients.</p>
+            </article>
+            <article>
+              <h3>Old/</h3>
+              <p>Archived server, client, and prompt experiments. The restored light prompt snapshot documents a previous prompt style.</p>
+            </article>
+            <article>
+              <h3>outputs/</h3>
+              <p>Generated walkthrough slides and overview artifacts used to explain or present the project.</p>
+            </article>
+            <article>
+              <h3>notes.txt</h3>
+              <p>Quick run instructions for the Jetson network setup, including the dashboard command and browser URL.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section-band run-band" aria-labelledby="run-title">
+        <div class="section-heading">
+          <p class="eyebrow">Run path</p>
+          <h2 id="run-title">How the live system starts</h2>
+        </div>
+        <div class="run-grid">
+          <div class="command-panel">
+            <span>Server Jetson</span>
+            <code>sudo python3 Site/dashboard_server.py --http-host 0.0.0.0 --http-port 80 --tcp-host 0.0.0.0 --tcp-port 5001</code>
+          </div>
+          <div class="command-panel">
+            <span>Browser</span>
+            <code>http://192.168.0.140</code>
+          </div>
+          <div class="command-panel">
+            <span>Client Jetsons</span>
+            <code>Main/client.py -> Site/dashboard_server.py -> Site/app.js</code>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

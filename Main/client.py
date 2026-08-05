@@ -18,10 +18,10 @@ from wheel_client import build_wheel_prompt, parse_wheel_response
 
 # ====================================================================== CONFIG
 OLLAMA_URL = "http://127.0.0.1:11434"
-MODEL_NAME = "gemma3:4b"
+MODEL_NAME = "gemma4:e2b-it-qat"
 OLLAMA_TEMPERATURE = 0.2        # randomness; lower values make agents more deterministic
-OLLAMA_TOP_P = 0.7              # word-choice pool; lower values reduce weird wording
-OLLAMA_REPEAT_PENALTY = 1.3     # discourages repeated phrases; too high can sound unnatural
+OLLAMA_TOP_P = 1.0              # word-choice pool; lower values reduce weird wording
+OLLAMA_REPEAT_PENALTY = 1.0     # 1 = no penalty; higher values reduce repetitiveness
 OLLAMA_NUM_PREDICT = 27         # maximum generated tokens; limits response length
 SERVER_IP = "192.168.0.140"
 SERVER_PORT = 5001
@@ -34,6 +34,23 @@ def normalize_figure_answer(value):
     text = str(value or "").strip().lower()
     text = re.sub(r"^[^a-z]+|[^a-z]+$", "", text)
     return text if text in VALID_FIGURES else ""
+
+
+def extract_figure_answer(value):
+    text = str(value or "")
+    exact = normalize_figure_answer(text)
+    if exact:
+        return exact
+
+    explicit = explicit_answer_from_message(text)
+    if explicit:
+        return explicit
+
+    mentioned = []
+    for figure in VALID_FIGURES:
+        if text_mentions_figure(text, figure):
+            mentioned.append(figure)
+    return mentioned[0] if len(mentioned) == 1 else ""
 
 
 def text_mentions_figure(text, figure):
@@ -122,6 +139,29 @@ def answer_without_figure_message(raw):
     return " ".join(lines).strip() or "I need more evidence before submitting a final answer."
 
 
+def raw_model_message(raw):
+    return str(raw or "").strip() or "I need more evidence before submitting a final answer."
+
+
+def explicit_answer_from_message(text):
+    body = str(text or "")
+    figure_words = "|".join(sorted(re.escape(figure) for figure in VALID_FIGURES))
+    patterns = [
+        r"\b(?:final\s+answer|answer|common\s+figure|shared\s+figure|common\s+symbol)\s*(?:is|:|should\s+be|may\s+be|might\s+be)\s+([a-z]+)\b",
+        r"\b(?:submit|choose)\s+(?:ANSWER\s*:?\s*)?([a-z]+)\b",
+        rf"\b({figure_words})\b\s+(?:is|seems|appears|looks|must\s+be|should\s+be|may\s+be|might\s+be)\s+(?:the\s+)?(?:common|shared)\s+(?:figure|symbol)\b",
+        rf"\b({figure_words})\b\s+(?:is|seems|appears|looks|must\s+be|should\s+be|may\s+be|might\s+be)\s+(?:the\s+)?(?:one\s+)?shared\s+by\s+all\b",
+        rf"\ball\s+(?:agents|of\s+us|of\s+them|participants)\s+(?:share|have)\s+({figure_words})\b",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, body, flags=re.IGNORECASE)
+        if match:
+            figure = normalize_figure_answer(match.group(1))
+            if figure:
+                return figure
+    return ""
+
+
 def normalize_ollama_options(options=None):
     options = options if isinstance(options, dict) else {}
 
@@ -164,6 +204,37 @@ def check_ollama():
     return True, "OK"
 
 
+def read_jetson_temperatures():
+    """Read all Linux thermal-zone sensors available on this Jetson."""
+    thermal_root = "/sys/class/thermal"
+    sensors = {}
+    try:
+        zone_names = sorted(
+            name for name in os.listdir(thermal_root)
+            if name.startswith("thermal_zone")
+        )
+    except OSError:
+        return sensors
+
+    for zone_name in zone_names:
+        zone_path = os.path.join(thermal_root, zone_name)
+        try:
+            with open(os.path.join(zone_path, "type"), "r", encoding="utf-8") as source:
+                sensor_name = source.read().strip() or zone_name
+            with open(os.path.join(zone_path, "temp"), "r", encoding="utf-8") as source:
+                raw_temperature = float(source.read().strip())
+        except (OSError, ValueError):
+            continue
+        temperature_c = raw_temperature / 1000 if abs(raw_temperature) >= 1000 else raw_temperature
+        unique_name = sensor_name
+        suffix = 2
+        while unique_name in sensors:
+            unique_name = f"{sensor_name}_{suffix}"
+            suffix += 1
+        sensors[unique_name] = round(temperature_c, 2)
+    return sensors
+
+
 # Sends the experiment prompt to the local Gemma model and returns this agent’s reply.
 def generate_agent_reply(
     agent_name,
@@ -187,6 +258,7 @@ def generate_agent_reply(
     wheel_recipients=None,
     wheel_recent_messages=None,
     preferred_wheel_recipient=None,
+    circle_shared_full_list_recipients=None,
     ollama_options=None,
 ):
     """
@@ -209,12 +281,11 @@ def generate_agent_reply(
         system_prompt = "You are a participant in the figure-matching experiment. Follow the user's instructions exactly."
         circle_history = circle_recent_messages or []
         last_own_message = get_last_own_message(agent_name, conversation_history)
-        shared_recipients = shared_figure_recipients(
-            agent_name,
-            conversation_history,
-            my_symbols,
-            circle_neighbors,
-        )
+        shared_recipients = [
+            neighbor
+            for neighbor in circle_neighbors
+            if neighbor in (circle_shared_full_list_recipients or set())
+        ]
         unshared_recipients = [
             neighbor
             for neighbor in circle_neighbors
@@ -336,8 +407,6 @@ Valid figures are only: asterisk, circle, cross, diamond, square, triangle.
             history_text += f"[{sender}]: {text}\n"
 
         last_own_message = get_last_own_message(agent_name, conversation_history)
-        likely_common_figure = active_private_figure(recent_history, my_symbols, agent_name, num_agents)
-        likely_common_text = likely_common_figure if likely_common_figure else "none yet"
 
         user_prompt = f"""
 Current state:
@@ -362,11 +431,10 @@ You may send one message now.
 Final answer is allowed.
 
 Submit ANSWER when one figure in your own private list is clearly supported by messages from most agents.
-Likely common figure from recent messages: {likely_common_text}
-If the likely common figure is not "none yet", answer with that figure now. Do not broadcast another confirmation.
+Do not broadcast another confirmation when your evidence is strong enough to submit ANSWER.
 
 If you are still discussing, write any short useful message.
-If you are submitting the final answer, write only one figure word and nothing else.
+If you are submitting the final answer, write ANSWER: one figure word and nothing else.
 
 Final answer words you may use: {figures_list}
 """
@@ -414,7 +482,11 @@ Write any short useful broadcast message. Do not use an answer-only figure word 
 
     # ---- Parse the model's strict response ----
     if topology == "circle":
-        return parse_strict_response(raw, preferred_recipient_order(circle_neighbors, preferred_neighbor))
+        return parse_strict_response(
+            raw,
+            preferred_recipient_order(circle_neighbors, preferred_neighbor),
+            infer_message_answers=False,
+        )
     if topology == "chain":
         return parse_strict_response(raw, chain_contacts)
     if topology == "y":
@@ -425,7 +497,7 @@ Write any short useful broadcast message. Do not use an answer-only figure word 
 
 
 # Decides whether the agent’s response is a chat message or answer.
-def parse_strict_response(raw, valid_recipients=None):
+def parse_strict_response(raw, valid_recipients=None, infer_message_answers=True):
     """
     Parse the required output format:
       MESSAGE AgentX: text
@@ -450,16 +522,37 @@ def parse_strict_response(raw, valid_recipients=None):
 
     answer_match = re.match(r"ANSWER\s*:\s*(.+)$", first_nonempty, flags=re.IGNORECASE)
     if answer_match:
-        return {"action": "answer", "word": answer_match.group(1).strip().strip("` '\""), "raw": raw}
+        return {"action": "answer", "word": extract_figure_answer(answer_match.group(1)), "raw": raw}
     answer_match = re.match(r"ANSWER\b\s+(.+)$", first_nonempty, flags=re.IGNORECASE)
     if answer_match:
-        return {"action": "answer", "word": answer_match.group(1).strip().strip("` '\""), "raw": raw}
+        return {"action": "answer", "word": extract_figure_answer(answer_match.group(1)), "raw": raw}
     if re.match(r"ACTION\s*:\s*ANSWER\b", first_nonempty, flags=re.IGNORECASE):
         for line in text.splitlines():
             word_match = re.match(r"\s*(WORD|SYMBOL)\s*:\s*(.+)$", line, flags=re.IGNORECASE)
             if word_match:
-                return {"action": "answer", "word": word_match.group(2).strip().strip("` '\""), "raw": raw}
+                return {"action": "answer", "word": extract_figure_answer(word_match.group(2)), "raw": raw}
         return {"action": "invalid", "raw": raw}
+
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    has_message_intent = any(
+        re.match(r"(MESSAGE|BROADCAST|TO|ACTION\s*:\s*CHAT)\b", line, flags=re.IGNORECASE)
+        for line in lines
+    )
+    if not has_message_intent:
+        for line in lines:
+            labeled_answer = re.match(
+                r"(?:FINAL\s+ANSWER|ANSWER|WORD|SYMBOL)\s*:?\s*(.+)?$",
+                line,
+                flags=re.IGNORECASE,
+            )
+            if labeled_answer:
+                word = extract_figure_answer(labeled_answer.group(1) or "")
+                if word:
+                    return {"action": "answer", "word": word, "raw": raw}
+        for line in lines:
+            bare_line_figure = normalize_figure_answer(line)
+            if bare_line_figure:
+                return {"action": "answer", "word": bare_line_figure, "raw": raw}
 
     if valid_recipients == ["BROADCAST"]:
         broadcast_match = re.match(r"BROADCAST\s*:\s*(.+)$", first_nonempty, flags=re.IGNORECASE)
@@ -507,7 +600,7 @@ def parse_strict_response(raw, valid_recipients=None):
         for line in text.splitlines()[1:]:
             answer_match = re.match(r"\s*ANSWER\s*:?\s*(.+)$", line, flags=re.IGNORECASE)
             if answer_match:
-                return {"action": "answer", "word": answer_match.group(1).strip().strip("` '\""), "raw": raw}
+                return {"action": "answer", "word": extract_figure_answer(answer_match.group(1)), "raw": raw}
             broadcast_match = re.match(r"\s*(BROADCAST|MESSAGE)\s*:?\s*(.+)$", line, flags=re.IGNORECASE)
             if broadcast_match:
                 return {
@@ -582,6 +675,14 @@ def parse_strict_response(raw, valid_recipients=None):
         message_text = text
 
     if message_text:
+        # Circle mode often uses phrases like "shared by all" as discussion
+        # evidence. Only non-circle modes recover those chat sentences as answers.
+        # Bare figure words and explicit ANSWER formats are still handled above.
+        if infer_message_answers:
+            explicit_answer = explicit_answer_from_message(message_text)
+            if explicit_answer:
+                return {"action": "answer", "word": explicit_answer, "raw": raw}
+
         normalized_target = normalize_agent_label(raw_target)
         target = normalized_recipients.get(normalized_target)
         target_source = "agent"
@@ -688,28 +789,6 @@ def has_shared_figures(agent_name, conversation_history, my_symbols):
     return any(all(symbol.lower() in text for symbol in my_symbols) for text in own_messages)
 
 
-def shared_figure_recipients(agent_name, conversation_history, my_symbols, valid_recipients):
-    shared = []
-    normalized_recipients = {
-        normalize_agent_label(recipient): recipient
-        for recipient in valid_recipients
-    }
-    for msg in conversation_history:
-        if msg.get("sender") != agent_name:
-            continue
-        text = msg.get("text", "")
-        lower_text = text.lower()
-        if not all(symbol.lower() in lower_text for symbol in my_symbols):
-            continue
-        target_match = re.match(r"\s*To\s+([^:]+)\s*:", text, flags=re.IGNORECASE)
-        if not target_match:
-            continue
-        recipient = normalized_recipients.get(normalize_agent_label(target_match.group(1)))
-        if recipient and recipient not in shared:
-            shared.append(recipient)
-    return shared
-
-
 def send_json(sock, payload):
     data = (json.dumps(payload) + "\n").encode("utf-8")
     sock.sendall(data)
@@ -780,8 +859,11 @@ def main():
             chain_contacts = []
             y_contacts = []
             wheel_recipients = []
+            circle_shared_full_list_recipients = set()
             ollama_options = normalize_ollama_options()
             recv_buffer = b""
+            trial_active = False
+            current_trial_id = None
 
             while True:
                 msg, recv_buffer = recv_json_line(sock, recv_buffer)
@@ -797,6 +879,7 @@ def main():
                     send_json(sock, {
                         "type": "nickname",
                         "hostname": hostname,
+                        "model_name": MODEL_NAME,
                     })
 
                 elif msg_type == "welcome":
@@ -808,7 +891,22 @@ def main():
                 elif msg_type == "restart_client":
                     restart_process(sock)
 
+                elif msg_type == "temperature_request":
+                    temperatures = read_jetson_temperatures()
+                    send_json(sock, {
+                        "type": "temperature_report",
+                        "request_id": msg.get("request_id"),
+                        "agent_name": agent_name,
+                        "recorded_at": time.time(),
+                        "temperatures_c": temperatures,
+                        "max_temperature_c": max(temperatures.values()) if temperatures else None,
+                    })
+
                 elif msg_type == "experiment_start":
+                    trial_active = True
+                    current_trial_id = msg.get("trial_id")
+                    conversation_history = []
+                    circle_shared_full_list_recipients = set()
                     agent_name = msg["agent_name"]
                     my_symbols = msg["your_symbols"]
                     num_agents = msg.get("num_agents", num_agents)
@@ -833,28 +931,56 @@ def main():
                     if topology == "wheel":
                         print(f"[START] Wheel recipients: {wheel_recipients}")
                     print(f"[START] Ollama options: {ollama_options}")
-                    conversation_history = []
 
                 elif msg_type == "system":
                     text = msg.get("text", "")
                     print(f"[SYSTEM] {text}")
-                    if topology not in ("circle", "chain", "y", "wheel"):
+                    if trial_active and topology not in ("circle", "chain", "y", "wheel"):
                         conversation_history.append({"sender": "SYSTEM", "text": text})
 
                 elif msg_type == "chat":
+                    if msg.get("trial_id") != current_trial_id:
+                        print(
+                            f"[STALE CHAT IGNORED] trial_id={msg.get('trial_id')!r}; "
+                            f"current={current_trial_id!r}."
+                        )
+                        continue
                     sender = msg.get("sender", "UNKNOWN")
                     text = msg.get("text", "")
                     print(f"[{sender}] {text}")
+                    if not trial_active:
+                        print("[STALE CHAT IGNORED] No active trial.")
+                        continue
                     conversation_history.append({"sender": sender, "text": text})
 
                 elif msg_type == "reset_chat_history":
+                    if current_trial_id is not None and msg.get("trial_id") != current_trial_id:
+                        print(
+                            f"[STALE RESET IGNORED] trial_id={msg.get('trial_id')!r}; "
+                            f"current={current_trial_id!r}."
+                        )
+                        continue
                     conversation_history = []
+                    circle_shared_full_list_recipients = set()
                     print("[ROUND] Chat history reset for new round.")
 
                 elif msg_type == "your_turn":
+                    if msg.get("trial_id") != current_trial_id:
+                        print(
+                            f"[STALE TURN IGNORED] trial_id={msg.get('trial_id')!r}; "
+                            f"current={current_trial_id!r}."
+                        )
+                        continue
+                    if not trial_active:
+                        print("[STALE TURN IGNORED] No active trial.")
+                        continue
                     if not agent_name:
                         print("[WARN] No agent name assigned yet.")
-                        send_json(sock, {"type": "chat", "text": "I am ready."})
+                        send_json(sock, {
+                            "type": "chat",
+                            "trial_id": current_trial_id,
+                            "text": "I am ready.",
+                        })
                         continue
 
                     turn_topology = msg.get("topology", topology)
@@ -951,6 +1077,7 @@ def main():
                         wheel_recipients,
                         wheel_recent_messages,
                         preferred_wheel_recipient,
+                        circle_shared_full_list_recipients,
                         ollama_options,
                     )
 
@@ -970,20 +1097,17 @@ def main():
 
                     if decision.get("action") == "answer":
                         raw_word = decision.get("word", "")
-                        word = normalize_figure_answer(raw_word)
+                        word = extract_figure_answer(raw_word)
                         raw = decision.get("raw", "")
                         print(f"[SEND ANSWER ATTEMPT] {raw}")
-                        if not can_answer:
-                            text = (
-                                f"I think the common figure may be {word}."
-                                if word
-                                else answer_without_figure_message(raw)
-                            )
+                        if not can_answer and turn_topology != "circle":
+                            text = raw_model_message(raw)
                             if turn_topology in ("circle", "chain", "y", "wheel") and private_target:
                                 print(f"[EARLY ANSWER FALLBACK CHAT] {agent_name} -> {private_target}: {text}")
                                 conversation_history.append({"sender": agent_name, "text": f"To {private_target}: {text}"})
                                 send_json(sock, {
                                     "type": "chat",
+                                    "trial_id": current_trial_id,
                                     "target": private_target,
                                     "text": text,
                                     "raw": raw,
@@ -993,15 +1117,21 @@ def main():
                             else:
                                 print(f"[EARLY ANSWER FALLBACK CHAT] {text}")
                                 conversation_history.append({"sender": agent_name, "text": text})
-                                send_json(sock, {"type": "chat", "text": text, "raw": raw})
+                                send_json(sock, {
+                                    "type": "chat",
+                                    "trial_id": current_trial_id,
+                                    "text": text,
+                                    "raw": raw,
+                                })
                             continue
                         if not word:
-                            text = answer_without_figure_message(raw)
+                            text = raw_model_message(raw)
                             if turn_topology in ("circle", "chain", "y", "wheel") and private_target:
                                 print(f"[ANSWER FALLBACK CHAT] {agent_name} -> {private_target}: {text}")
                                 conversation_history.append({"sender": agent_name, "text": f"To {private_target}: {text}"})
                                 send_json(sock, {
                                     "type": "chat",
+                                    "trial_id": current_trial_id,
                                     "target": private_target,
                                     "text": text,
                                     "raw": raw,
@@ -1011,17 +1141,28 @@ def main():
                                 continue
                             print(f"[ANSWER FALLBACK CHAT] {text}")
                             conversation_history.append({"sender": agent_name, "text": text})
-                            send_json(sock, {"type": "chat", "text": text, "raw": raw})
+                            send_json(sock, {
+                                "type": "chat",
+                                "trial_id": current_trial_id,
+                                "text": text,
+                                "raw": raw,
+                            })
                             continue
-                        send_json(sock, {"type": "answer", "word": word, "raw": raw})
+                        send_json(sock, {
+                            "type": "answer",
+                            "trial_id": current_trial_id,
+                            "word": word,
+                            "raw": raw,
+                        })
                     elif decision.get("action") == "invalid":
                         raw = decision.get("raw", "")
                         if turn_topology in ("circle", "chain", "y", "wheel") and private_target:
-                            text = answer_without_figure_message(raw)
+                            text = raw_model_message(raw)
                             print(f"[INVALID FALLBACK CHAT] {agent_name} -> {private_target}: {text}")
                             conversation_history.append({"sender": agent_name, "text": f"To {private_target}: {text}"})
                             send_json(sock, {
                                 "type": "chat",
+                                "trial_id": current_trial_id,
                                 "target": private_target,
                                 "text": text,
                                 "raw": raw,
@@ -1030,7 +1171,11 @@ def main():
                             })
                             continue
                         print("[SEND INVALID OUTPUT]")
-                        send_json(sock, {"type": "invalid", "raw": raw})
+                        send_json(sock, {
+                            "type": "invalid",
+                            "trial_id": current_trial_id,
+                            "raw": raw,
+                        })
                     else:
                         raw = decision.get("raw", "")
                         text = decision.get("text", "")
@@ -1039,7 +1184,12 @@ def main():
                             print(f"{agent_name} -> {target}: {text}")
                         else:
                             print(f"[SEND CHAT] {text}")
-                        payload = {"type": "chat", "text": text, "raw": raw}
+                        payload = {
+                            "type": "chat",
+                            "trial_id": current_trial_id,
+                            "text": text,
+                            "raw": raw,
+                        }
                         if turn_topology in ("circle", "chain", "y", "wheel"):
                             payload["target"] = decision.get("target", "")
                         if turn_topology in ("circle", "chain", "y", "wheel"):
@@ -1051,12 +1201,27 @@ def main():
                             else text
                         )
                         conversation_history.append({"sender": agent_name, "text": own_text})
+                        if (
+                            turn_topology == "circle"
+                            and target
+                            and all(symbol.lower() in text.lower() for symbol in my_symbols)
+                        ):
+                            circle_shared_full_list_recipients.add(target)
                         send_json(sock, payload)
 
                 elif msg_type in ("result", "experiment_end"):
+                    if msg.get("trial_id") != current_trial_id:
+                        print(
+                            f"[STALE RESULT IGNORED] trial_id={msg.get('trial_id')!r}; "
+                            f"current={current_trial_id!r}."
+                        )
+                        continue
                     print("\n[RESULT]")
                     print(json.dumps(msg, indent=2))
+                    trial_active = False
+                    current_trial_id = None
                     conversation_history = []
+                    circle_shared_full_list_recipients = set()
                     my_symbols = []
                     circle_neighbors = []
                     chain_contacts = []

@@ -28,6 +28,7 @@ FIXED_FIVE_JETSON_TOPOLOGIES = {"circle", "chain", "y", "wheel"}
 DEFAULT_FIGURES_PER_CARD = 3
 MAX_ROUNDS_PER_TRIAL = 10
 MAX_MESSAGES_PER_TRIAL = 50
+CIRCLE_MAX_MESSAGES_PER_TRIAL = 40
 EFFICIENCY_MAX_ROUNDS_BY_AGENTS = {
     2: 3,
     3: 3,
@@ -97,6 +98,31 @@ def normalize_figure_answer(value):
     return text if text in FIGURES else ""
 
 
+def extract_figure_answer(value):
+    text = str(value or "")
+    exact = normalize_figure_answer(text)
+    if exact:
+        return exact
+
+    patterns = [
+        r"\b(?:final\s+answer|answer|common\s+figure|shared\s+figure|common\s+symbol)\s*(?:is|:|should\s+be|may\s+be|might\s+be)\s+([a-z]+)\b",
+        r"\b(?:submit|choose)\s+(?:ANSWER\s*:?\s*)?([a-z]+)\b",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            figure = normalize_figure_answer(match.group(1))
+            if figure:
+                return figure
+
+    mentioned = [
+        figure
+        for figure in FIGURES
+        if re.search(rf"\b{re.escape(figure)}\b", text, flags=re.IGNORECASE)
+    ]
+    return mentioned[0] if len(mentioned) == 1 else ""
+
+
 def normalize_hostname(hostname):
     return str(hostname).strip().lower().split(".", 1)[0]
 
@@ -154,11 +180,11 @@ def get_y_contacts(agent_id):
 
 def get_wheel_contacts(agent_id):
     contacts_by_agent = {
-        1: [5],
-        2: [5],
-        3: [5],
-        4: [5],
-        5: [1, 2, 3, 4],
+        1: [3],
+        2: [3],
+        3: [1, 2, 4, 5],
+        4: [3],
+        5: [3],
     }
     return contacts_by_agent.get(agent_id, [])
 
@@ -290,8 +316,12 @@ def answer_gate_message_count(topology, server):
     return server.broadcast_discussion_rounds
 
 
-def evaluate_efficiency(found, has_answer, messages_used, num_agents, topology):
-    max_efficient_messages = MAX_MESSAGES_PER_TRIAL
+def max_messages_for_topology(topology):
+    return CIRCLE_MAX_MESSAGES_PER_TRIAL if topology == "circle" else MAX_MESSAGES_PER_TRIAL
+
+
+def evaluate_efficiency(found, has_answer, messages_used, num_agents, topology, max_messages):
+    max_efficient_messages = max_messages
 
     if not has_answer:
         return (
@@ -368,6 +398,7 @@ class LeavittServer:
         self.accepting_connections = False
         self.required_for_trial = 0
         self.stop_current_trial = False
+        self.trial_id = 0
 
         self.num_agents = 2
         self.cards = {}
@@ -840,53 +871,8 @@ class LeavittServer:
         return None
 
     def _choose_next_sock(self, active_socks):
-        active_names = [
-            self.clients[sock]["name"]
-            for sock in active_socks
-            if sock in self.clients
-        ]
-        active_name_set = set(active_names)
-        if not self.scheduler_queue:
-            self.scheduler_queue = list(active_names)
-        else:
-            self.scheduler_queue = [
-                name for name in self.scheduler_queue if name in active_name_set
-            ]
-            for name in active_names:
-                if name not in self.scheduler_queue:
-                    self.scheduler_queue.append(name)
-
-        if not self.scheduler_queue:
-            return active_socks[0] if active_socks else None
-
-        min_messages = min(
-            self.messages_per_agent.get(name, 0)
-            for name in active_names
-        )
-        least_used = {
-            name
-            for name in active_names
-            if self.messages_per_agent.get(name, 0) == min_messages
-        }
-
-        for name in list(self.scheduler_queue):
-            if name in least_used and name in self.unread_agents:
-                self.scheduler_queue.remove(name)
-                self.scheduler_queue.append(name)
-                self.unread_agents.discard(name)
-                return self._sock_by_name(active_socks, name)
-
-        for name in list(self.scheduler_queue):
-            if name in least_used:
-                self.scheduler_queue.remove(name)
-                self.scheduler_queue.append(name)
-                self.unread_agents.discard(name)
-                return self._sock_by_name(active_socks, name)
-
-        name = self.scheduler_queue.pop(0)
-        self.scheduler_queue.append(name)
-        self.unread_agents.discard(name)
-        return self._sock_by_name(active_socks, name)
+        candidates = [sock for sock in active_socks if sock in self.clients]
+        return random.choice(candidates) if candidates else None
 
     def _record_valid_message(self, speaker, receivers):
         if self.start_time is None:
@@ -911,6 +897,7 @@ class LeavittServer:
         if self.topology == "circle":
             self._send(sock, {
                 "type": "your_turn",
+                "trial_id": self.trial_id,
                 "topology": "circle",
                 "round": message_count,
                 "message_count": message_count,
@@ -929,6 +916,7 @@ class LeavittServer:
         elif self.topology == "chain":
             self._send(sock, {
                 "type": "your_turn",
+                "trial_id": self.trial_id,
                 "topology": "chain",
                 "round": message_count,
                 "message_count": message_count,
@@ -947,6 +935,7 @@ class LeavittServer:
         elif self.topology == "y":
             self._send(sock, {
                 "type": "your_turn",
+                "trial_id": self.trial_id,
                 "topology": "y",
                 "round": message_count,
                 "message_count": message_count,
@@ -965,6 +954,7 @@ class LeavittServer:
         elif self.topology == "wheel":
             self._send(sock, {
                 "type": "your_turn",
+                "trial_id": self.trial_id,
                 "topology": "wheel",
                 "round": message_count,
                 "message_count": message_count,
@@ -983,6 +973,7 @@ class LeavittServer:
         else:
             self._send(sock, {
                 "type": "your_turn",
+                "trial_id": self.trial_id,
                 "round": message_count,
                 "message_count": message_count,
                 "can_answer": can_answer,
@@ -1007,6 +998,7 @@ class LeavittServer:
     ):
         if self.topology == "circle":
             valid_neighbors = self.circle_neighbors_by_name.get(speaker, [])
+            original_target = original_target or target or ""
             receiver = internal_agent_name(target) if target else target
             if not receiver or receiver not in valid_neighbors:
                 if not valid_neighbors:
@@ -1019,16 +1011,26 @@ class LeavittServer:
                         "valid_neighbors": [display_agent_name(name) for name in valid_neighbors],
                         "raw": raw,
                         "message": text,
+                        "target_source": target_source,
+                        "original_target": original_target,
                     })
                     return False
                 receiver = internal_agent_name(self._preferred_circle_neighbor(speaker))
+                target_source = "server_assigned"
                 print(
                     f"{display_agent_name(speaker)}: invalid target {target!r}; "
                     f"defaulted to {display_agent_name(receiver)}."
                 )
+            elif not target_source:
+                target_source = "agent"
 
             receiver_sock = self._sock_by_name(active_socks, receiver)
-            if receiver_sock and self._send(receiver_sock, {"type": "chat", "sender": display_agent_name(speaker), "text": text}):
+            if receiver_sock and self._send(receiver_sock, {
+                "type": "chat",
+                "trial_id": self.trial_id,
+                "sender": display_agent_name(speaker),
+                "text": text,
+            }):
                 self.circle_last_target_by_speaker[speaker] = receiver
             else:
                 print(f"{display_agent_name(speaker)}: invalid target, skipped.")
@@ -1040,6 +1042,8 @@ class LeavittServer:
                     "valid_neighbors": [display_agent_name(name) for name in valid_neighbors],
                     "raw": raw,
                     "message": text,
+                    "target_source": target_source,
+                    "original_target": original_target,
                 })
                 return False
 
@@ -1048,6 +1052,11 @@ class LeavittServer:
                 self.agent_histories.setdefault(receiver_id, []).append({
                     "sender": display_agent_name(speaker),
                     "text": text,
+                })
+            if speaker_id is not None:
+                self.agent_histories.setdefault(speaker_id, []).append({
+                    "sender": display_agent_name(speaker),
+                    "text": f"To {display_agent_name(receiver)}: {text}",
                 })
             message_number = self._record_valid_message(speaker, [receiver])
 
@@ -1059,6 +1068,8 @@ class LeavittServer:
                 "valid_neighbors": [display_agent_name(name) for name in valid_neighbors],
                 "raw": raw,
                 "message": text,
+                "target_source": target_source,
+                "original_target": original_target,
                 "elapsed": round(self._elapsed_since_first_message(), 2),
             })
 
@@ -1101,7 +1112,12 @@ class LeavittServer:
                 )
 
             receiver_sock = self._sock_by_name(active_socks, receiver)
-            if receiver_sock and self._send(receiver_sock, {"type": "chat", "sender": display_agent_name(speaker), "text": text}):
+            if receiver_sock and self._send(receiver_sock, {
+                "type": "chat",
+                "trial_id": self.trial_id,
+                "sender": display_agent_name(speaker),
+                "text": text,
+            }):
                 self.chain_last_target_by_speaker[speaker] = receiver
             else:
                 print(f"{display_agent_name(speaker)}: invalid target, skipped.")
@@ -1183,7 +1199,12 @@ class LeavittServer:
                 )
 
             receiver_sock = self._sock_by_name(active_socks, receiver)
-            if receiver_sock and self._send(receiver_sock, {"type": "chat", "sender": display_agent_name(speaker), "text": text}):
+            if receiver_sock and self._send(receiver_sock, {
+                "type": "chat",
+                "trial_id": self.trial_id,
+                "sender": display_agent_name(speaker),
+                "text": text,
+            }):
                 self.y_last_target_by_speaker[speaker] = receiver
             else:
                 print(f"{display_agent_name(speaker)}: invalid target, skipped.")
@@ -1265,7 +1286,12 @@ class LeavittServer:
                 )
 
             receiver_sock = self._sock_by_name(active_socks, receiver)
-            if receiver_sock and self._send(receiver_sock, {"type": "chat", "sender": display_agent_name(speaker), "text": text}):
+            if receiver_sock and self._send(receiver_sock, {
+                "type": "chat",
+                "trial_id": self.trial_id,
+                "sender": display_agent_name(speaker),
+                "text": text,
+            }):
                 self.wheel_last_target_by_speaker[speaker] = receiver
             else:
                 print(f"{display_agent_name(speaker)}: invalid target, skipped.")
@@ -1327,7 +1353,12 @@ class LeavittServer:
                 "elapsed": round(self._elapsed_since_first_message(), 2),
             })
             self.broadcast(
-                {"type": "chat", "sender": display_agent_name(speaker), "text": text},
+                {
+                    "type": "chat",
+                    "trial_id": self.trial_id,
+                    "sender": display_agent_name(speaker),
+                    "text": text,
+                },
                 exclude=current_sock,
                 recipients=active_socks,
             )
@@ -1337,12 +1368,15 @@ class LeavittServer:
     def run_experiment(self):
         self.stop_current_trial = False
         self.accepting_connections = False
+        self.trial_id += 1
+        current_trial_id = self.trial_id
         if topology_requires_all_jetsons(self.topology):
             self.num_agents = MAX_PARTICIPANTS
             print(f"[START] {display_topology_name(self.topology)} mode requires all {MAX_PARTICIPANTS} Jetsons.")
         else:
             self.num_agents = self._prompt_num_agents()
-        print(f"[START] Trial limit: {MAX_MESSAGES_PER_TRIAL} total messages.")
+        max_messages_per_trial = max_messages_for_topology(self.topology)
+        print(f"[START] Trial limit: {max_messages_per_trial} total messages.")
         self.required_for_trial = self.num_agents
         self.accepting_connections = True
 
@@ -1442,10 +1476,16 @@ class LeavittServer:
             print(f"  Selected internal order: {', '.join(selected_internal_order)}")
         print(f"{'=' * 55}\n")
 
+        self.broadcast({
+            "type": "reset_chat_history",
+            "trial_id": current_trial_id,
+        }, recipients=active_socks)
+
         for sock in active_socks:
             name = self.clients[sock]["name"]
             self._send(sock, {
                 "type": "experiment_start",
+                "trial_id": current_trial_id,
                 "agent_name": display_agent_name(name),
                 "your_symbols": self.cards[name],
                 "num_agents": self.num_agents,
@@ -1453,7 +1493,7 @@ class LeavittServer:
                 "pool_size": self.pool_size,
                 "topology": self.topology,
                 "discussion_rounds": None,
-                "max_messages": MAX_MESSAGES_PER_TRIAL,
+                "max_messages": max_messages_per_trial,
                 "circle_neighbors": [
                     display_agent_name(neighbor)
                     for neighbor in self.circle_neighbors_by_name.get(name, [])
@@ -1482,17 +1522,10 @@ class LeavittServer:
         max_messages_reason = None
         scheduler_steps = 0
         idle_steps = 0
-        max_scheduler_steps = MAX_MESSAGES_PER_TRIAL * max(self.num_agents, 1) * 4
-        initial_circle_socks = list(active_socks) if self.topology == "circle" else []
-
+        max_scheduler_steps = max_messages_per_trial * max(self.num_agents, 1) * 4
         while self.running and not trial_finished:
             with self.lock:
                 active_socks = [sock for sock in active_socks if sock in self.clients]
-                initial_circle_socks = [
-                    sock
-                    for sock in initial_circle_socks
-                    if sock in self.clients and sock in active_socks
-                ]
             missing_required = self._missing_required_jetsons(active_socks)
             if missing_required:
                 missing_display = ", ".join(display_agent_name(name) for name in missing_required)
@@ -1501,9 +1534,9 @@ class LeavittServer:
                 print(f"[EXP] Trial stopped before next turn. Missing: {missing_display}.")
                 break
 
-            if self.message_count >= MAX_MESSAGES_PER_TRIAL:
+            if self.message_count >= max_messages_per_trial:
                 max_messages_reached = True
-                max_messages_reason = f"maximum message limit reached ({MAX_MESSAGES_PER_TRIAL} messages)"
+                max_messages_reason = f"maximum message limit reached ({max_messages_per_trial} messages)"
                 print(f"\n[MAX MESSAGES] {max_messages_reason}")
                 trial_finished = True
                 break
@@ -1519,11 +1552,7 @@ class LeavittServer:
                 print(f"\n[STALLED] {stall_reason}")
                 break
 
-            current_sock = (
-                initial_circle_socks.pop(0)
-                if initial_circle_socks
-                else self._choose_next_sock(active_socks)
-            )
+            current_sock = self._choose_next_sock(active_socks)
             if current_sock is None:
                 stalled = True
                 stall_reason = "no active agents available"
@@ -1538,7 +1567,10 @@ class LeavittServer:
             reset_chat_history = False
             if reset_chat_history:
                 self._reset_agent_histories()
-                self.broadcast({"type": "reset_chat_history"}, recipients=active_socks)
+                self.broadcast({
+                    "type": "reset_chat_history",
+                    "trial_id": current_trial_id,
+                }, recipients=active_socks)
                 print("[ROUND] Round ended. Resetting agent chat histories.")
 
             can_answer = self.message_count >= answer_gate_message_count(self.topology, self)
@@ -1566,6 +1598,11 @@ class LeavittServer:
                 trial_finished = True
             elif resp.get("type") == "timeout":
                 print(f"[TIMEOUT] {display_agent_name(speaker)}")
+            elif resp.get("trial_id") != current_trial_id:
+                print(
+                    f"[STALE RESPONSE IGNORED] {display_agent_name(speaker)} sent "
+                    f"trial_id={resp.get('trial_id')!r}; expected {current_trial_id}."
+                )
             elif resp.get("type") == "invalid":
                 print(f"{display_agent_name(speaker)}: invalid output, skipped.")
             elif resp.get("type") == "chat":
@@ -1589,16 +1626,16 @@ class LeavittServer:
                         target_source=target_source,
                         original_target=original_target,
                     )
-                    if accepted and self.message_count >= MAX_MESSAGES_PER_TRIAL:
+                    if accepted and self.message_count >= max_messages_per_trial:
                         max_messages_reached = True
-                        max_messages_reason = f"maximum message limit reached ({MAX_MESSAGES_PER_TRIAL} messages)"
+                        max_messages_reason = f"maximum message limit reached ({max_messages_per_trial} messages)"
                         print(f"\n[MAX MESSAGES] {max_messages_reason}")
                         trial_finished = True
                 else:
                     print(f"{display_agent_name(speaker)}: empty MESSAGE, skipped.")
             elif resp.get("type") == "answer":
                 raw_word = resp.get("word", resp.get("symbol", resp.get("text", ""))).strip()
-                word = normalize_figure_answer(raw_word)
+                word = extract_figure_answer(raw_word)
                 if not word:
                     print(
                         f"{display_agent_name(speaker)}: invalid answer {raw_word!r}, skipped. "
@@ -1667,11 +1704,13 @@ class LeavittServer:
             messages_used,
             self.num_agents,
             self.topology,
+            max_messages_per_trial,
         )
         result_status = efficiency_status
 
         result = {
             "type": "experiment_end",
+            "trial_id": current_trial_id,
             "result": result_status,
             "reason": (
                 "trial stopped by user" if self.stop_current_trial
@@ -1703,7 +1742,7 @@ class LeavittServer:
             "num_agents": self.num_agents,
             "figures_per_card": self.figures_per_card,
             "pool_size": self.pool_size,
-            "max_messages_per_trial": MAX_MESSAGES_PER_TRIAL,
+            "max_messages_per_trial": max_messages_per_trial,
             "max_messages_reached": max_messages_reached,
             "efficiency_status": efficiency_status,
             "efficiency_explanation": efficiency_explanation,

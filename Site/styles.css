@@ -287,11 +287,35 @@ h2 {
 }
 
 .topology-segmented {
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-areas:
+    "circle chain"
+    "y wheel"
+    "broadcast broadcast";
 }
 
-.topology-segmented .segment:last-child:nth-child(odd) {
-  grid-column: 1 / -1;
+.topology-segmented .segment[data-mode="broadcast"] {
+  grid-area: broadcast;
+}
+
+.topology-segmented .segment[data-mode="circle"] {
+  grid-area: circle;
+}
+
+.topology-segmented .segment[data-mode="chain"] {
+  grid-area: chain;
+}
+
+.topology-segmented .segment[data-mode="y"] {
+  grid-area: y;
+}
+
+.topology-segmented .segment[data-mode="wheel"] {
+  grid-area: wheel;
+}
+
+.topology-segmented .segment {
+  font-size: 0.78rem;
 }
 
 .segment {
@@ -333,6 +357,23 @@ input[type="range"] {
 
 .model-controls {
   gap: 8px;
+}
+
+.model-readout {
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.3;
+}
+
+.model-readout code {
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: inherit;
+  font-weight: 750;
+}
+
+.model-readout code.mixed {
+  color: #a15314;
 }
 
 .compact-label {

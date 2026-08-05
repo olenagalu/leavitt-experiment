@@ -277,11 +277,31 @@ h2 {
 }
 
 .topology-segmented {
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-areas:
+    "circle chain"
+    "y wheel"
+    "broadcast broadcast";
 }
 
-.topology-segmented .segment:last-child:nth-child(odd) {
-  grid-column: 1 / -1;
+.topology-segmented .segment[data-mode="broadcast"] {
+  grid-area: broadcast;
+}
+
+.topology-segmented .segment[data-mode="circle"] {
+  grid-area: circle;
+}
+
+.topology-segmented .segment[data-mode="chain"] {
+  grid-area: chain;
+}
+
+.topology-segmented .segment[data-mode="y"] {
+  grid-area: y;
+}
+
+.topology-segmented .segment[data-mode="wheel"] {
+  grid-area: wheel;
 }
 
 .segment {

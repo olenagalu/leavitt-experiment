@@ -7,6 +7,8 @@ This module is imported by client.py and is not intended to run directly.
 import random
 import re
 
+from shared_features_client import current_state, discussion_rules, format_history, intro_section, output_format, recent_messages_section
+
 
 DEBUG = False
 def normalize_agent_name(name):
@@ -38,80 +40,51 @@ def build_circle_prompt(
     figures_list = ", ".join(my_symbols)
     recipients_text = ", ".join(circle_neighbors)
     fallback_recipient = preferred_neighbor or (random.choice(circle_neighbors) if circle_neighbors else "")
-    shared_full_list_recipients = shared_full_list_recipients or []
     unshared_full_list_recipients = unshared_full_list_recipients or []
-    suggested_recipient = (
-        unshared_full_list_recipients[0]
-        if unshared_full_list_recipients
-        else fallback_recipient
-    )
-
-    history_text = ""
-    for msg in conversation_history[-15:]:
-        sender = msg.get("sender", "SYSTEM")
-        text = msg.get("text", "")
-        history_text += f"[{sender}]: {text}\n"
-
-    if not history_text:
-        history_text = "(No received messages yet.)\n"
+    suggested_recipient = unshared_full_list_recipients[0] if unshared_full_list_recipients else fallback_recipient
+    history_text = format_history(conversation_history)
 
     return f"""
-You are {agent_name}, one of {num_agents} agents in a figure-matching experiment.
+{intro_section(agent_name, num_agents, symbols_str)}
 
-Your figures:
-{symbols_str}
+Ring topology:
+- You can send one private message per turn.
+- You may send it only to one of these valid recipients: {recipients_text}.
+- You choose which valid recipient receives your CHAT message.
+- If your response does not include a valid recipient, the system will choose one allowed recipient for this turn.
+- Only the selected recipient will see your message.
+- You may pass useful information from one allowed recipient to the other allowed recipient.
 
-Goal:
-Find the one figure shared by all {num_agents} agents.
+{discussion_rules(recipients_text, can_answer)}
 
-You may do exactly one action:
-MESSAGE recipient: message
-final answer: one figure word only
+{current_state(agent_name, figures_list, recipients_text, suggested_recipient, already_shared_full_list, last_own_message, pending_question_text)}
 
-Valid chat recipients: {recipients_text}
+{recent_messages_section(history_text)}
 
-Rules:
-- Keep the whole response under 77 tokens.
-- Before sending message, choose one valid recipient from: {recipients_text}.
-- Use only your private figures and messages received from allowed recipients.
-- Only the selected recipient sees your discussion message.
-- If you have not shared your full figure list yet, your next message should share only your full figure list.
-- After that, compare received messages with your own list.
-- If no figure has been proposed, propose one possible common figure only if it is in your list and appears in another agent's message.
-- Confirm and submit ANSWER figure only if it is in your own list.
-- If another agent proposes a figure that is not in your list, say you do not have it and redirect discussion toward figures that overlap with your list and received messages.
-- Do not submit ANSWER immediately.
-- When you see the common figure, submit ANSWER for it instead of sending another confirmation.
-- Do not submit ANSWER for a figure that is not in your own private list.
-- Do not repeat your previous message.
-- Stay only inside the figure task.
-
-
-
-Current state:
-
-You are: {agent_name}
-Your figures: {figures_list}
-Final answer allowed: {"yes" if can_answer else "no"}
-Allowed recipients: {recipients_text}
-Suggested recipient for this turn if you need a default: {suggested_recipient}
-Previous message: {last_own_message}
-
-Recent messages:
-{history_text}
-
-Output exactly one line and nothing else.
-For discussion, use: MESSAGE <one of: {recipients_text}>: <short useful message>
-For final ANSWER, use only one of these figure words: {figures_list}
+{output_format(recipients_text, figures_list, can_answer)}
 """
 
 
 def parse_circle_response(raw, agent_name, circle_neighbors):
     raw_upper = raw.upper()
     first_nonempty = next((line.strip() for line in raw.splitlines() if line.strip()), "")
+
+    def clean_answer_word(value):
+        return value.strip().strip("` '\".,;:")
+
+    def is_one_word(value):
+        return bool(re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", clean_answer_word(value)))
+
+    def last_one_word_line():
+        for line in reversed(raw.splitlines()):
+            line_stripped = line.strip()
+            if is_one_word(line_stripped):
+                return clean_answer_word(line_stripped)
+        return ""
+
     answer_match = re.match(r"ANSWER\s*:\s*(.+)$", first_nonempty, flags=re.IGNORECASE)
     if answer_match:
-        word = answer_match.group(1).strip().strip("` '\"")
+        word = clean_answer_word(answer_match.group(1))
         return {"action": "answer", "word": word, "raw": raw}
 
     if "ACTION: ANSWER" in raw_upper or "ACTION:ANSWER" in raw_upper:
@@ -119,10 +92,20 @@ def parse_circle_response(raw, agent_name, circle_neighbors):
         for line in raw.split("\n"):
             line_stripped = line.strip()
             upper = line_stripped.upper()
-            if upper.startswith("WORD:") or upper.startswith("SYMBOL:"):
-                word = line_stripped.split(":", 1)[1].strip().strip("` '\"")
+            if upper.startswith("WORD:") or upper.startswith("SYMBOL:") or upper.startswith("MESSAGE:"):
+                word = clean_answer_word(line_stripped.split(":", 1)[1])
                 break
+        if not word:
+            word = last_one_word_line()
         return {"action": "answer", "word": word, "raw": raw}
+
+    if is_one_word(first_nonempty):
+        return {"action": "answer", "word": clean_answer_word(first_nonempty), "raw": raw}
+
+    if "MESSAGE:" not in raw_upper:
+        routed_answer_word = last_one_word_line()
+        if routed_answer_word and re.search(r"\bTO\s*:", raw, flags=re.IGNORECASE):
+            return {"action": "answer", "word": routed_answer_word, "raw": raw}
 
     raw_target = ""
     text = ""

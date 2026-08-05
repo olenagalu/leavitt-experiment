@@ -32,6 +32,7 @@ const topologyMeta = {
     label: "Circle mode",
     description: "Each Jetson sends private messages only to its two circle neighbors.",
     fixedAgents: 5,
+    defaultMaxMessages: 40,
   },
   chain: {
     label: "Chain mode",
@@ -45,7 +46,7 @@ const topologyMeta = {
   },
   wheel: {
     label: "Wheel mode",
-    description: "Agent5 is the central hub. Other Jetsons send through Agent5.",
+    description: "Agent3 is the central hub. Other Jetsons send through Agent3.",
     fixedAgents: 5,
   },
 };
@@ -54,16 +55,20 @@ const topologyLinks = {
   circle: [[1, 2], [2, 3], [3, 4], [4, 5], [5, 1]],
   chain: [[1, 2], [2, 3], [3, 4], [4, 5]],
   y: [[1, 3], [2, 3], [3, 4], [4, 5]],
-  wheel: [[1, 5], [2, 5], [3, 5], [4, 5]],
+  wheel: [[1, 3], [2, 3], [3, 4], [3, 5]],
 };
 
 const defaultOllamaOptions = {
   temperature: 0.2,
-  top_p: 0.7,
-  repeat_penalty: 1.2,
+  top_p: 1,
+  repeat_penalty: 1,
   num_predict: 77,
 };
 const defaultMaxMessages = 50;
+const defaultCoolingOptions = {
+  between_temperatures_minutes: 5,
+  between_topologies_minutes: 15,
+};
 
 const state = {
   source: "live",
@@ -80,9 +85,12 @@ const state = {
   liveSnapshot: null,
   eventSource: null,
   autoTrials: false,
+  requestedStudyKind: null,
+  coolingOptions: { ...defaultCoolingOptions },
   ollamaOptions: { ...defaultOllamaOptions },
-  maxMessages: defaultMaxMessages,
+  maxMessages: maxMessagesDefaultForMode("circle"),
   chatHistories: {},
+  resultTopologies: [],
 };
 
 const canvas = document.querySelector("#networkCanvas");
@@ -99,7 +107,9 @@ const ollamaTemperature = document.querySelector("#ollamaTemperature");
 const ollamaTopP = document.querySelector("#ollamaTopP");
 const ollamaRepeatPenalty = document.querySelector("#ollamaRepeatPenalty");
 const ollamaNumPredict = document.querySelector("#ollamaNumPredict");
+const activeModel = document.querySelector("#activeModel");
 const maxMessages = document.querySelector("#maxMessages");
+const temperaturePauseMinutes = document.querySelector("#temperaturePauseMinutes");
 const connectionStatus = document.querySelector("#connectionStatus");
 const statusPill = document.querySelector(".status-pill");
 const sourceLabel = document.querySelector("#sourceLabel");
@@ -124,6 +134,9 @@ const clearFeed = document.querySelector("#clearFeed");
 const startTrial = document.querySelector("#startTrial");
 const stopTrial = document.querySelector("#stopTrial");
 const autoTrials = document.querySelector("#autoTrials");
+const fullStudy = document.querySelector("#fullStudy");
+const leavittStudy = document.querySelector("#leavittStudy");
+const powerOffJetsons = document.querySelector("#powerOffJetsons");
 const restartClients = document.querySelector("#restartClients");
 const clearResults = document.querySelector("#clearResults");
 const resultsBody = document.querySelector("#resultsBody");
@@ -187,9 +200,9 @@ function getPositions() {
       wheel: {
         1: [0.28, 0.24],
         2: [0.28, 0.76],
-        3: [0.72, 0.24],
+        3: [0.5, 0.5],
         4: [0.72, 0.76],
-        5: [0.5, 0.5],
+        5: [0.72, 0.24],
       },
     };
     return list.map((agent) => {
@@ -466,6 +479,10 @@ function routeLabel(route) {
   return `${sender} -> ${receiver}`;
 }
 
+function eventFeedRouteLabel(route) {
+  return routeLabel(route).replace(/\s*\(selected\)/gi, "");
+}
+
 function resetChatHistories() {
   state.chatHistories = {};
   visibleAgents().forEach((agent) => {
@@ -522,9 +539,49 @@ function syncModeButtons(activeTopology) {
   });
 }
 
+function modeDetailText(meta) {
+  return `SLM stands for small language model: a compact AI model running locally on each Jetson to read messages and choose a response. ${meta.description}`;
+}
+
+function updateActiveModel(snapshot) {
+  const connected = snapshot?.connected || [];
+  const reportedModels = [...new Set(
+    connected
+      .map((agent) => String(agent.model || "").trim())
+      .filter(Boolean)
+  )].sort();
+
+  if (!connected.length) {
+    activeModel.textContent = "waiting for Jetsons";
+    activeModel.classList.remove("mixed");
+    return;
+  }
+
+  if (!reportedModels.length) {
+    activeModel.textContent = "not reported";
+    activeModel.classList.remove("mixed");
+    return;
+  }
+
+  if (reportedModels.length === 1) {
+    activeModel.textContent = reportedModels[0];
+    activeModel.classList.remove("mixed");
+    return;
+  }
+
+  activeModel.textContent = `mixed (${reportedModels.join(", ")})`;
+  activeModel.classList.add("mixed");
+}
+
 function updateCopy() {
   const snapshot = state.liveSnapshot;
-  const trialLocked = Boolean(snapshot?.trialActive || snapshot?.trialRequested);
+  const trialLocked = Boolean(
+    snapshot?.trialActive
+    || snapshot?.trialRequested
+    || snapshot?.autoTrials
+    || snapshot?.fullStudyActive
+    || state.requestedStudyKind
+  );
   const topology = state.source === "live" && trialLocked ? snapshot.topology : state.mode;
   const meta = topologyMeta[topology] || topologyMeta.broadcast;
   const agents = visibleAgents();
@@ -533,9 +590,10 @@ function updateCopy() {
   const connectedAgents = snapshot?.connected?.length || 0;
   const waitingForAgents = state.source === "live" && connectedAgents < neededAgents;
 
+  updateActiveModel(snapshot);
   sourceLabel.textContent = state.source === "live" ? "Live Jetsons" : "Demo animation";
   modeTitle.textContent = meta.label;
-  modeDescription.textContent = `SLM stands for small language model: a compact AI model running locally on each Jetson to read messages and choose a response. ${meta.description}`;
+  modeDescription.textContent = modeDetailText(meta);
   syncModeButtons(topology);
 
   if (route) {
@@ -591,6 +649,7 @@ function updateCopy() {
   ollamaRepeatPenalty.disabled = trialLocked;
   ollamaNumPredict.disabled = trialLocked;
   maxMessages.disabled = trialLocked;
+  temperaturePauseMinutes.disabled = trialLocked;
   if (trialLocked && snapshot?.maxMessages) {
     maxMessages.value = String(snapshot.maxMessages);
     state.maxMessages = snapshot.maxMessages;
@@ -601,9 +660,49 @@ function updateCopy() {
   restartClients.disabled = state.source !== "live" || trialLocked;
   clearFeed.disabled = trialLocked;
   clearResults.disabled = trialLocked;
-  autoTrials.setAttribute("aria-pressed", String(Boolean(snapshot?.autoTrials || state.autoTrials)));
-  autoTrials.textContent = snapshot?.autoTrials || state.autoTrials ? "Stop auto" : "Auto trials";
+  const autoEnabled = Boolean((snapshot?.autoTrials && !snapshot?.fullStudyActive) || state.autoTrials);
+  const autoCompleted = snapshot?.autoTrialCompleted ?? 0;
+  const autoTarget = snapshot?.autoTrialTarget ?? 50;
+  autoTrials.setAttribute("aria-pressed", String(autoEnabled));
+  autoTrials.textContent = autoEnabled
+    ? `Stop auto (${autoCompleted}/${autoTarget})`
+    : (autoCompleted >= autoTarget ? `Auto trials (${autoCompleted}/${autoTarget})` : "Auto trials");
   autoTrials.disabled = trialLocked;
+  const activeStudyKind = snapshot?.fullStudyActive
+    ? snapshot.fullStudyKind
+    : state.requestedStudyKind;
+  const completedStudyBatches = snapshot?.fullStudyCompletedBatches ?? 0;
+  const studyBatchCount = snapshot?.fullStudyBatchCount ?? 0;
+  const studyButtons = [
+    {
+      element: fullStudy,
+      kind: "full",
+      idleLabel: "Run Full Study",
+      activeLabel: "Full study",
+      title: "Run 750 trials: 50 trials at temperatures 0, 0.5, and 1 for Broadcast, Circle, Y, Wheel, and Chain.",
+    },
+    {
+      element: leavittStudy,
+      kind: "leavitt",
+      idleLabel: "Run Leavitt Study",
+      activeLabel: "Leavitt study",
+      title: "Run 600 trials: 50 trials at temperatures 0, 0.5, and 1 for Circle, Y, Wheel, and Chain.",
+    },
+  ];
+  studyButtons.forEach(({ element, kind, idleLabel, activeLabel, title }) => {
+    const enabled = activeStudyKind === kind;
+    element.setAttribute("aria-pressed", String(enabled));
+    element.textContent = snapshot?.fullStudyCooling && enabled
+      ? `Cooling (${snapshot.fullStudyCoolingKind === "topology" ? "topology" : "temperature"} pause)`
+      : enabled
+        ? `${activeLabel} (${completedStudyBatches}/${studyBatchCount} batches)`
+        : idleLabel;
+    element.disabled = state.source !== "live" || trialLocked || liveCount < 5;
+    element.title = liveCount < 5 ? "This study requires all 5 Jetsons connected." : title;
+  });
+  const poweroffRequested = Boolean(snapshot?.poweroffRequested);
+  powerOffJetsons.disabled = state.source !== "live" || trialLocked || poweroffRequested;
+  powerOffJetsons.textContent = poweroffRequested ? "Power-off scheduled" : "Power off all Jetsons";
   updateStageOverlay(snapshot);
   renderResults(snapshot?.results || []);
 }
@@ -666,7 +765,7 @@ function demoStep() {
   state.round = Math.floor((state.messageCount - 1) / state.agentCount) + 1;
   state.lastRoute.round = state.round;
   recordChat(state.lastRoute);
-  addEvent("chat", routeLabel(state.lastRoute), text, state.mode, sender.name);
+  addEvent("chat", eventFeedRouteLabel(state.lastRoute), text, state.mode, sender.name);
   state.activeIndex = (state.activeIndex + 1) % state.agentCount;
 
   updateCopy();
@@ -686,6 +785,8 @@ function setMode(mode) {
   if (state.source === "demo") {
     resetDemo();
   }
+  state.maxMessages = maxMessagesDefaultForMode(mode);
+  maxMessages.value = String(state.maxMessages);
   resetChatHistories();
   syncModeButtons(mode);
   updateCopy();
@@ -779,7 +880,7 @@ function handleLiveEvent(event) {
     state.lastRoute = payload;
     state.pulse = 0;
     recordChat(payload);
-    addEvent("chat", routeLabel(payload), payload.message || "", payload.topology, payload.sender);
+    addEvent("chat", eventFeedRouteLabel(payload), payload.message || "", payload.topology, payload.sender);
   } else if (event.kind === "trial_started") {
     state.lastRoute = null;
     eventFeed.innerHTML = "";
@@ -797,6 +898,61 @@ function handleLiveEvent(event) {
     addEvent("error", `${payload.speaker} timed out`, "No response received.", state.mode, payload.speaker);
   } else if (event.kind === "trial_finished") {
     return;
+  } else if (event.kind === "trial_interrupted") {
+    addEvent("error", "Trial interrupted", payload.message || "Waiting for all five Jetsons to reconnect.", payload.topology || state.mode);
+  } else if (event.kind === "auto_trials_completed") {
+    addEvent(
+      "system",
+      "Auto trials complete",
+      `${payload.completed}/${payload.target} trials saved. Report: ${payload.report || "created"}`,
+      state.mode,
+    );
+  } else if (event.kind === "auto_trials_save_failed") {
+    addEvent("error", "Auto trials stopped", payload.message || "Could not save trial data.", state.mode);
+  } else if (event.kind === "auto_trial_start_delayed") {
+    addEvent("error", "Circle trial waiting", `${payload.message || "Could not start."} Retrying automatically.`, "circle");
+  } else if (event.kind === "full_study_started") {
+    const label = payload.study_label || "Automated study";
+    addEvent("system", `${label} started`, `${payload.total_trials} trials will be saved to ${payload.directory}.`, payload.topologies?.[0] || state.mode);
+  } else if (event.kind === "full_study_batch_started") {
+    addEvent(
+      "system",
+      `Study batch ${payload.batch}/${payload.total_batches}`,
+      `${payload.topology}, temperature ${payload.temperature}`,
+      payload.topology || state.mode,
+    );
+  } else if (event.kind === "full_study_cooling_started") {
+    const pauseLabel = payload.pause_kind === "topology" ? "topology" : "temperature";
+    addEvent("system", `Cooling pause after batch ${payload.after_batch}`, `${pauseLabel} pause; resumes at ${payload.cooling_until}.`, state.mode);
+  } else if (event.kind === "temperature_snapshot") {
+    const available = (payload.readings || []).filter((reading) => Number.isFinite(reading.max_temperature_c));
+    const maximum = available.length ? Math.max(...available.map((reading) => reading.max_temperature_c)) : null;
+    addEvent(
+      "system",
+      `Temperature snapshot: ${payload.phase}`,
+      maximum === null ? "No Jetson temperature was available." : `Highest Jetson sensor: ${maximum.toFixed(1)}°C`,
+      state.mode,
+    );
+  } else if (event.kind === "full_study_completed") {
+    state.requestedStudyKind = null;
+    addEvent("system", `${payload.study_label || "Automated study"} complete`, `${payload.total_trials} trials saved. Report: ${payload.report}`, state.mode);
+  } else if (event.kind === "full_study_failed") {
+    state.requestedStudyKind = null;
+    addEvent("error", `${payload.study_label || "Automated study"} stopped`, payload.message || "Could not start the next batch.", state.mode);
+  } else if (event.kind === "poweroff_readiness") {
+    const failedClients = (payload.clients || []).filter((client) => !client.ready).map((client) => client.hostname);
+    const detail = payload.ready
+      ? "Server and all five clients can run passwordless poweroff."
+      : `Not ready. Server: ${payload.server?.reason || "unknown"}. Failed clients: ${failedClients.join(", ") || "none"}.`;
+    addEvent(payload.ready ? "system" : "error", "Power-off readiness", detail, state.mode);
+  } else if (event.kind === "poweroff_scheduled") {
+    addEvent("system", "Power-off scheduled", `${payload.message} Starting in ${payload.delay_seconds} seconds.`, state.mode);
+  } else if (event.kind === "client_poweroff_result") {
+    addEvent(payload.sent ? "system" : "error", `${payload.hostname} power-off`, payload.reason || "", state.mode);
+  } else if (event.kind === "poweroff_aborted") {
+    addEvent("error", "Power-off aborted", payload.message || "The server remains on.", state.mode);
+  } else if (event.kind === "server_poweroff_starting") {
+    addEvent("system", "Server powering off", payload.message || "", state.mode);
   } else if (event.kind === "client_joined") {
     const label = payload.reloaded ? "reconnected after reload" : "connected";
     addEvent("system", `${payload.agent} ${label}`, payload.hostname || "", state.mode, payload.agent);
@@ -832,31 +988,62 @@ function renderResults(results) {
   const activeTopology = state.source === "live" && (state.liveSnapshot?.trialActive || state.liveSnapshot?.trialRequested)
     ? state.liveSnapshot.topology
     : state.mode;
-  const topology = topologyMeta[activeTopology]?.label || activeTopology || "-";
-  const topologyRow = `<tr><td><strong>Topology</strong></td><td colspan="6">${escapeHtml(topology)}</td></tr>`;
+  rememberResultTopology(activeTopology);
 
   if (!results.length) {
-    resultsBody.innerHTML = `${topologyRow}<tr><td colspan="7">No live trials yet.</td></tr>`;
+    resultsBody.innerHTML = `${renderResultTopologyRow(activeTopology)}<tr><td colspan="7">No live trials yet.</td></tr>`;
     return;
   }
-  const resultRows = [...results].reverse().map((result) => {
-    const resultClass = result.success ? "result-good" : "result-bad";
-    const resultText = result.success ? "Success" : "Fail";
-    const submittedFigure = resultSubmittedFigureText(result);
-    const correctFigure = resultCorrectFigureText(result);
-    return `
-      <tr>
-        <td>${result.trial_id ?? "-"}</td>
-        <td><span class="${resultClass}">${resultText}</span></td>
-        <td>${escapeHtml(submittedFigure)}</td>
-        <td>${escapeHtml(correctFigure)}</td>
-        <td>${result.temperature ?? result.ollama_options?.temperature ?? "-"}</td>
-        <td>${result.total_messages ?? "-"}</td>
-        <td>${result.time_seconds ?? "-"}s</td>
-      </tr>
-    `;
+  resultsBody.innerHTML = renderResultSections(results, activeTopology);
+}
+
+function rememberResultTopology(topology) {
+  if (!topology) {
+    return;
+  }
+  state.resultTopologies = [
+    topology,
+    ...state.resultTopologies.filter((savedTopology) => savedTopology !== topology),
+  ];
+}
+
+function renderResultSections(results, activeTopology) {
+  const topologies = [
+    activeTopology,
+    ...state.resultTopologies,
+    ...results.map((result) => result.topology),
+  ].filter(Boolean);
+  const orderedTopologies = [...new Set(topologies)];
+  return orderedTopologies.map((topology) => {
+    const topologyResults = results.filter((result) => (result.topology || activeTopology) === topology);
+    if (!topologyResults.length) {
+      return topology === activeTopology ? renderResultTopologyRow(topology) : "";
+    }
+    const resultRows = [...topologyResults].reverse().map((result, index) => {
+      const round = topologyResults.length - index;
+      const resultClass = result.success ? "result-good" : "result-bad";
+      const resultText = result.success ? "Success" : "Fail";
+      const submittedFigure = resultSubmittedFigureText(result);
+      const correctFigure = resultCorrectFigureText(result);
+      return `
+        <tr>
+          <td>${round}</td>
+          <td><span class="${resultClass}">${resultText}</span></td>
+          <td>${escapeHtml(submittedFigure)}</td>
+          <td>${escapeHtml(correctFigure)}</td>
+          <td>${result.temperature ?? result.ollama_options?.temperature ?? "-"}</td>
+          <td>${result.total_messages ?? result.message_count ?? "-"}</td>
+          <td>${result.time_seconds ?? "-"}s</td>
+        </tr>
+      `;
+    }).join("");
+    return `${renderResultTopologyRow(topology)}${resultRows}`;
   }).join("");
-  resultsBody.innerHTML = `${topologyRow}${resultRows}`;
+}
+
+function renderResultTopologyRow(topology) {
+  const label = topologyMeta[topology]?.label || topology || "-";
+  return `<tr><td><strong>Topology</strong></td><td colspan="6">${escapeHtml(label)}</td></tr>`;
 }
 
 function resultSubmittedFigureText(result) {
@@ -905,6 +1092,10 @@ function numberFromInput(input, fallback, min, max, integer = false) {
   return normalized;
 }
 
+function maxMessagesDefaultForMode(mode) {
+  return topologyMeta[mode]?.defaultMaxMessages || defaultMaxMessages;
+}
+
 function getOllamaOptions() {
   state.ollamaOptions = {
     temperature: numberFromInput(ollamaTemperature, defaultOllamaOptions.temperature, 0, 2),
@@ -916,8 +1107,21 @@ function getOllamaOptions() {
 }
 
 function getMaxMessages() {
-  state.maxMessages = numberFromInput(maxMessages, defaultMaxMessages, 1, 500, true);
+  state.maxMessages = numberFromInput(maxMessages, maxMessagesDefaultForMode(state.mode), 1, 500, true);
   return state.maxMessages;
+}
+
+function getCoolingOptions() {
+  state.coolingOptions = {
+    between_temperatures_minutes: numberFromInput(
+      temperaturePauseMinutes,
+      defaultCoolingOptions.between_temperatures_minutes,
+      0,
+      180,
+    ),
+    between_topologies_minutes: defaultCoolingOptions.between_topologies_minutes,
+  };
+  return state.coolingOptions;
 }
 
 async function requestStartTrial() {
@@ -951,6 +1155,7 @@ async function requestStartTrial() {
 
 async function requestStopTrial() {
   state.autoTrials = false;
+  state.requestedStudyKind = null;
   updateCopy();
   try {
     const response = await fetch("/api/stop", { method: "POST" });
@@ -994,6 +1199,73 @@ async function requestAutoTrials() {
   }
 }
 
+async function requestStudy(studyKind) {
+  if (state.liveSnapshot?.trialActive || state.liveSnapshot?.trialRequested || state.liveSnapshot?.autoTrials) {
+    return;
+  }
+  const studyOptions = {
+    full: { endpoint: "/api/full-study", mode: "broadcast", label: "Full study" },
+    leavitt: { endpoint: "/api/leavitt-study", mode: "circle", label: "Leavitt study" },
+  };
+  const selectedStudy = studyOptions[studyKind];
+  if (!selectedStudy) {
+    return;
+  }
+  setMode(selectedStudy.mode);
+  state.requestedStudyKind = studyKind;
+  updateCopy();
+  try {
+    const response = await fetch(selectedStudy.endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ollama_options: getOllamaOptions(),
+        cooling_options: getCoolingOptions(),
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      state.requestedStudyKind = null;
+    }
+    addEvent(
+      response.ok ? "system" : "error",
+      response.ok ? `${selectedStudy.label} requested` : `Could not start ${selectedStudy.label}`,
+      payload.message || "",
+      selectedStudy.mode,
+    );
+    fetchState();
+  } catch {
+    state.requestedStudyKind = null;
+    updateCopy();
+    addEvent("system", "Live server offline", "Start dashboard_server.py, then reload this page.", state.mode);
+  }
+}
+
+async function requestFullStudy() {
+  return requestStudy("full");
+}
+
+async function requestLeavittStudy() {
+  return requestStudy("leavitt");
+}
+
+async function requestPowerOffJetsons() {
+  const confirmed = window.confirm(
+    "Power off the five client Jetsons and then the server Jetson? They will require power cycling to start again.",
+  );
+  if (!confirmed) {
+    return;
+  }
+  try {
+    const response = await fetch("/api/power-off-jetsons", { method: "POST" });
+    const payload = await response.json();
+    addEvent(response.ok ? "system" : "error", "Power off all Jetsons", payload.message || "", state.mode);
+    fetchState();
+  } catch {
+    addEvent("error", "Could not request power-off", "Dashboard server is unavailable.", state.mode);
+  }
+}
+
 async function requestRestartClients() {
   if (state.liveSnapshot?.trialActive || state.liveSnapshot?.trialRequested) {
     return;
@@ -1017,6 +1289,7 @@ async function requestClearResults() {
   if (state.liveSnapshot?.trialActive || state.liveSnapshot?.trialRequested) {
     return;
   }
+  state.resultTopologies = [];
   try {
     await fetch("/api/clear-results", { method: "POST" });
     renderResults([]);
@@ -1141,6 +1414,15 @@ maxMessages.addEventListener("input", () => {
   getMaxMessages();
 });
 
+[temperaturePauseMinutes].forEach((input) => {
+  input.addEventListener("input", () => {
+    if (state.liveSnapshot?.trialActive || state.liveSnapshot?.trialRequested || state.liveSnapshot?.fullStudyActive) {
+      return;
+    }
+    getCoolingOptions();
+  });
+});
+
 playPause.addEventListener("click", () => {
   state.playing = !state.playing;
   playPause.classList.toggle("playing", !state.playing);
@@ -1162,6 +1444,9 @@ eventFeedResizeHandle.addEventListener("pointerdown", startEventFeedResize);
 startTrial.addEventListener("click", requestStartTrial);
 stopTrial.addEventListener("click", requestStopTrial);
 autoTrials.addEventListener("click", requestAutoTrials);
+fullStudy.addEventListener("click", requestFullStudy);
+leavittStudy.addEventListener("click", requestLeavittStudy);
+powerOffJetsons.addEventListener("click", requestPowerOffJetsons);
 restartClients.addEventListener("click", requestRestartClients);
 clearResults.addEventListener("click", requestClearResults);
 

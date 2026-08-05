@@ -18,7 +18,7 @@ from wheel_client import build_wheel_prompt, parse_wheel_response
 
 # ====================================================================== CONFIG
 OLLAMA_URL = "http://127.0.0.1:11434"
-MODEL_NAME = "gemma4:e2b-it-qat"
+MODEL_NAME = "gemma3:4b"
 OLLAMA_TEMPERATURE = 0.2        # randomness; lower values make agents more deterministic
 OLLAMA_TOP_P = 1.0              # word-choice pool; lower values reduce weird wording
 OLLAMA_REPEAT_PENALTY = 1.0     # 1 = no penalty; higher values reduce repetitiveness

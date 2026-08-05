@@ -15,6 +15,12 @@ Broadcast trials can use 2-5 agents. The circle, chain, Y, and wheel topologies 
 
 The models run locally and do not require internet access during the experiment.
 
+## Public Demo
+
+[Open the interactive Leavitt Experiment demo](https://minds-leavitt-demo.netlify.app/)
+
+The public demo reproduces the current dashboard with simulated Jetson agents, topology-based message routing, conversations, and trial results. It does not connect to the private Jetson network or expose live experiment data.
+
 ## Supported Topologies
 
 * 🌐 **Broadcast** - every agent can communicate with every other agent.

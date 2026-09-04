@@ -1,0 +1,252 @@
+# GEMMA 3 — 50 TRIALS PER TEMPERATURE, ALL TOPOLOGIES
+
+- Topologies: Broadcast, Circle, Y, Wheel, Chain
+- Temperatures: 0, 0.5, 1
+- Trials per topology/temperature combination: 50
+- Trials per topology: 150
+- Total trials: 750
+
+## Topology connections
+
+### CIRCLE TOPOLOGY
+
+| Agent  | Connected to   |
+| ------ | -------------- |
+| Agent1 | Agent2, Agent5 |
+| Agent2 | Agent1, Agent3 |
+| Agent3 | Agent2, Agent4 |
+| Agent4 | Agent3, Agent5 |
+| Agent5 | Agent1, Agent4 |
+
+### Y TOPOLOGY
+
+| Agent  | Connected to           |
+| ------ | ---------------------- |
+| Agent1 | Agent3                 |
+| Agent2 | Agent3                 |
+| Agent3 | Agent1, Agent2, Agent4 |
+| Agent4 | Agent3, Agent5         |
+| Agent5 | Agent4                 |
+
+### WHEEL TOPOLOGY
+
+| Agent  | Connected to                   |
+| ------ | ------------------------------ |
+| Agent1 | Agent3                         |
+| Agent2 | Agent3                         |
+| Agent3 | Agent1, Agent2, Agent4, Agent5 |
+| Agent4 | Agent3                         |
+| Agent5 | Agent3                         |
+
+### CHAIN TOPOLOGY
+
+| Agent  | Connected to   |
+| ------ | -------------- |
+| Agent1 | Agent2         |
+| Agent2 | Agent1, Agent3 |
+| Agent3 | Agent2, Agent4 |
+| Agent4 | Agent3, Agent5 |
+| Agent5 | Agent4         |
+
+## Batch summary
+
+| Topology   | Temperature | Status   | Trials | Success rate | Average total messages | Average time (seconds) |
+| ---------- | ----------: | -------- | -----: | -----------: | ---------------------: | ---------------------: |
+| Broadcast  |           0 | complete |  50/50 | 48.0% (24/50) |                   5.46 |                  28.37 |
+| Broadcast  |         0.5 | complete |  50/50 | 46.0% (23/50) |                   5.24 |                  30.47 |
+| Broadcast  |           1 | complete |  50/50 | 40.0% (20/50) |                   5.16 |                  30.34 |
+| Circle     |           0 | complete |  50/50 | 20.0% (10/50) |                  12.36 |                  57.35 |
+| Circle     |         0.5 | complete |  50/50 | 34.0% (17/50) |                  12.00 |                  56.44 |
+| Circle     |           1 | complete |  50/50 | 40.0% (20/50) |                  10.96 |                  51.49 |
+| Y topology |           0 | complete |  50/50 | 26.0% (13/50) |                  17.04 |                  74.31 |
+| Y topology |         0.5 | complete |  50/50 | 34.0% (17/50) |                  17.36 |                  75.87 |
+| Y topology |           1 | complete |  50/50 | 38.0% (19/50) |                  18.78 |                  81.41 |
+| Wheel      |           0 | complete |  50/50 | 26.0% (13/50) |                  16.04 |                  75.82 |
+| Wheel      |         0.5 | complete |  50/50 | 22.0% (11/50) |                  17.06 |                  81.32 |
+| Wheel      |           1 | complete |  50/50 | 36.0% (18/50) |                  18.00 |                  84.72 |
+| Chain      |           0 | complete |  50/50 | 22.0% (11/50) |                  13.92 |                  63.02 |
+| Chain      |         0.5 | complete |  50/50 | 30.0% (15/50) |                  15.24 |                  66.85 |
+| Chain      |           1 | complete |  50/50 | 30.0% (15/50) |                  15.64 |                  67.86 |
+
+## Overall results by topology
+
+| Topology   | Trials | Successes | Success rate | Average total messages | Average time (seconds) |
+| ---------- | -----: | --------: | -----------: | ---------------------: | ---------------------: |
+| Broadcast  |    150 |        67 |        44.7% |                   5.29 |                  29.73 |
+| Circle     |    150 |        47 |        31.3% |                  11.77 |                  55.09 |
+| Y topology |    150 |        49 |        32.7% |                  17.73 |                  77.19 |
+| Wheel      |    150 |        42 |        28.0% |                  17.03 |                  80.62 |
+| Chain      |    150 |        41 |        27.3% |                  14.93 |                  65.91 |
+| All        |    750 |       246 |        32.8% |                  13.35 |                  61.71 |
+
+## Overall recipient-choice probabilities
+
+```text
+| Topology   | Sender | Recipient | Allowed recipients | Choices | Total explicit choices | Probability     |
+| ---------- | ------ | --------- | -----------------: | ------: | ---------------------: | --------------: |
+| Circle     | Agent1 | Agent2    |                  2 |      46 |                    390 |  11.8% (0.118) |
+| Circle     | Agent1 | Agent5    |                  2 |     344 |                    390 |  88.2% (0.882) |
+| Circle     | Agent2 | Agent1    |                  2 |     295 |                    373 |  79.1% (0.791) |
+| Circle     | Agent2 | Agent3    |                  2 |      78 |                    373 |  20.9% (0.209) |
+| Circle     | Agent3 | Agent2    |                  2 |     311 |                    322 |  96.6% (0.966) |
+| Circle     | Agent3 | Agent4    |                  2 |      11 |                    322 |   3.4% (0.034) |
+| Circle     | Agent4 | Agent3    |                  2 |     245 |                    335 |  73.1% (0.731) |
+| Circle     | Agent4 | Agent5    |                  2 |      90 |                    335 |  26.9% (0.269) |
+| Circle     | Agent5 | Agent1    |                  2 |     253 |                    346 |  73.1% (0.731) |
+| Circle     | Agent5 | Agent4    |                  2 |      93 |                    346 |  26.9% (0.269) |
+| Y topology | Agent1 | Agent3    |                  1 |     517 |                    517 | 100.0% (1.000) |
+| Y topology | Agent2 | Agent3    |                  1 |     528 |                    528 | 100.0% (1.000) |
+| Y topology | Agent3 | Agent1    |                  3 |     234 |                    547 |  42.8% (0.428) |
+| Y topology | Agent3 | Agent2    |                  3 |     217 |                    547 |  39.7% (0.397) |
+| Y topology | Agent3 | Agent4    |                  3 |      96 |                    547 |  17.6% (0.176) |
+| Y topology | Agent4 | Agent3    |                  2 |     433 |                    540 |  80.2% (0.802) |
+| Y topology | Agent4 | Agent5    |                  2 |     107 |                    540 |  19.8% (0.198) |
+| Y topology | Agent5 | Agent4    |                  1 |     524 |                    524 | 100.0% (1.000) |
+| Wheel      | Agent1 | Agent3    |                  1 |     494 |                    494 | 100.0% (1.000) |
+| Wheel      | Agent2 | Agent3    |                  1 |     517 |                    517 | 100.0% (1.000) |
+| Wheel      | Agent3 | Agent1    |                  4 |     289 |                    516 |  56.0% (0.560) |
+| Wheel      | Agent3 | Agent2    |                  4 |     200 |                    516 |  38.8% (0.388) |
+| Wheel      | Agent3 | Agent4    |                  4 |      12 |                    516 |   2.3% (0.023) |
+| Wheel      | Agent3 | Agent5    |                  4 |      15 |                    516 |   2.9% (0.029) |
+| Wheel      | Agent4 | Agent3    |                  1 |     519 |                    519 | 100.0% (1.000) |
+| Wheel      | Agent5 | Agent3    |                  1 |     509 |                    509 | 100.0% (1.000) |
+| Chain      | Agent1 | Agent2    |                  1 |     385 |                    385 | 100.0% (1.000) |
+| Chain      | Agent2 | Agent1    |                  2 |     395 |                    459 |  86.1% (0.861) |
+| Chain      | Agent2 | Agent3    |                  2 |      64 |                    459 |  13.9% (0.139) |
+| Chain      | Agent3 | Agent2    |                  2 |     437 |                    453 |  96.5% (0.965) |
+| Chain      | Agent3 | Agent4    |                  2 |      16 |                    453 |   3.5% (0.035) |
+| Chain      | Agent4 | Agent3    |                  2 |     315 |                    487 |  64.7% (0.647) |
+| Chain      | Agent4 | Agent5    |                  2 |     172 |                    487 |  35.3% (0.353) |
+| Chain      | Agent5 | Agent4    |                  1 |     456 |                    456 | 100.0% (1.000) |
+```
+
+## Recipient-choice probabilities by temperature
+
+### Temperature 0
+
+```text
+| Topology   | Sender | Recipient | Allowed recipients | Choices | Total explicit choices | Probability     |
+| ---------- | ------ | --------- | -----------------: | ------: | ---------------------: | --------------: |
+| Circle     | Agent1 | Agent2    |                  2 |      10 |                    138 |   7.2% (0.072) |
+| Circle     | Agent1 | Agent5    |                  2 |     128 |                    138 |  92.8% (0.928) |
+| Circle     | Agent2 | Agent1    |                  2 |     102 |                    131 |  77.9% (0.779) |
+| Circle     | Agent2 | Agent3    |                  2 |      29 |                    131 |  22.1% (0.221) |
+| Circle     | Agent3 | Agent2    |                  2 |     107 |                    110 |  97.3% (0.973) |
+| Circle     | Agent3 | Agent4    |                  2 |       3 |                    110 |   2.7% (0.027) |
+| Circle     | Agent4 | Agent3    |                  2 |      84 |                    117 |  71.8% (0.718) |
+| Circle     | Agent4 | Agent5    |                  2 |      33 |                    117 |  28.2% (0.282) |
+| Circle     | Agent5 | Agent1    |                  2 |      90 |                    122 |  73.8% (0.738) |
+| Circle     | Agent5 | Agent4    |                  2 |      32 |                    122 |  26.2% (0.262) |
+| Y topology | Agent1 | Agent3    |                  1 |     168 |                    168 | 100.0% (1.000) |
+| Y topology | Agent2 | Agent3    |                  1 |     164 |                    164 | 100.0% (1.000) |
+| Y topology | Agent3 | Agent1    |                  3 |      71 |                    167 |  42.5% (0.425) |
+| Y topology | Agent3 | Agent2    |                  3 |      63 |                    167 |  37.7% (0.377) |
+| Y topology | Agent3 | Agent4    |                  3 |      33 |                    167 |  19.8% (0.198) |
+| Y topology | Agent4 | Agent3    |                  2 |     128 |                    168 |  76.2% (0.762) |
+| Y topology | Agent4 | Agent5    |                  2 |      40 |                    168 |  23.8% (0.238) |
+| Y topology | Agent5 | Agent4    |                  1 |     184 |                    184 | 100.0% (1.000) |
+| Wheel      | Agent1 | Agent3    |                  1 |     145 |                    145 | 100.0% (1.000) |
+| Wheel      | Agent2 | Agent3    |                  1 |     169 |                    169 | 100.0% (1.000) |
+| Wheel      | Agent3 | Agent1    |                  4 |     102 |                    170 |  60.0% (0.600) |
+| Wheel      | Agent3 | Agent2    |                  4 |      64 |                    170 |  37.6% (0.376) |
+| Wheel      | Agent3 | Agent4    |                  4 |       2 |                    170 |   1.2% (0.012) |
+| Wheel      | Agent3 | Agent5    |                  4 |       2 |                    170 |   1.2% (0.012) |
+| Wheel      | Agent4 | Agent3    |                  1 |     163 |                    163 | 100.0% (1.000) |
+| Wheel      | Agent5 | Agent3    |                  1 |     155 |                    155 | 100.0% (1.000) |
+| Chain      | Agent1 | Agent2    |                  1 |     126 |                    126 | 100.0% (1.000) |
+| Chain      | Agent2 | Agent1    |                  2 |     121 |                    137 |  88.3% (0.883) |
+| Chain      | Agent2 | Agent3    |                  2 |      16 |                    137 |  11.7% (0.117) |
+| Chain      | Agent3 | Agent2    |                  2 |     130 |                    134 |  97.0% (0.970) |
+| Chain      | Agent3 | Agent4    |                  2 |       4 |                    134 |   3.0% (0.030) |
+| Chain      | Agent4 | Agent3    |                  2 |      97 |                    158 |  61.4% (0.614) |
+| Chain      | Agent4 | Agent5    |                  2 |      61 |                    158 |  38.6% (0.386) |
+| Chain      | Agent5 | Agent4    |                  1 |     141 |                    141 | 100.0% (1.000) |
+```
+
+### Temperature 0.5
+
+```text
+| Topology   | Sender | Recipient | Allowed recipients | Choices | Total explicit choices | Probability     |
+| ---------- | ------ | --------- | -----------------: | ------: | ---------------------: | --------------: |
+| Circle     | Agent1 | Agent2    |                  2 |       9 |                    128 |   7.0% (0.070) |
+| Circle     | Agent1 | Agent5    |                  2 |     119 |                    128 |  93.0% (0.930) |
+| Circle     | Agent2 | Agent1    |                  2 |      95 |                    124 |  76.6% (0.766) |
+| Circle     | Agent2 | Agent3    |                  2 |      29 |                    124 |  23.4% (0.234) |
+| Circle     | Agent3 | Agent2    |                  2 |     110 |                    111 |  99.1% (0.991) |
+| Circle     | Agent3 | Agent4    |                  2 |       1 |                    111 |   0.9% (0.009) |
+| Circle     | Agent4 | Agent3    |                  2 |      84 |                    117 |  71.8% (0.718) |
+| Circle     | Agent4 | Agent5    |                  2 |      33 |                    117 |  28.2% (0.282) |
+| Circle     | Agent5 | Agent1    |                  2 |      94 |                    120 |  78.3% (0.783) |
+| Circle     | Agent5 | Agent4    |                  2 |      26 |                    120 |  21.7% (0.217) |
+| Y topology | Agent1 | Agent3    |                  1 |     144 |                    144 | 100.0% (1.000) |
+| Y topology | Agent2 | Agent3    |                  1 |     183 |                    183 | 100.0% (1.000) |
+| Y topology | Agent3 | Agent1    |                  3 |      80 |                    185 |  43.2% (0.432) |
+| Y topology | Agent3 | Agent2    |                  3 |      79 |                    185 |  42.7% (0.427) |
+| Y topology | Agent3 | Agent4    |                  3 |      26 |                    185 |  14.1% (0.141) |
+| Y topology | Agent4 | Agent3    |                  2 |     154 |                    189 |  81.5% (0.815) |
+| Y topology | Agent4 | Agent5    |                  2 |      35 |                    189 |  18.5% (0.185) |
+| Y topology | Agent5 | Agent4    |                  1 |     165 |                    165 | 100.0% (1.000) |
+| Wheel      | Agent1 | Agent3    |                  1 |     175 |                    175 | 100.0% (1.000) |
+| Wheel      | Agent2 | Agent3    |                  1 |     180 |                    180 | 100.0% (1.000) |
+| Wheel      | Agent3 | Agent1    |                  4 |      91 |                    166 |  54.8% (0.548) |
+| Wheel      | Agent3 | Agent2    |                  4 |      67 |                    166 |  40.4% (0.404) |
+| Wheel      | Agent3 | Agent4    |                  4 |       4 |                    166 |   2.4% (0.024) |
+| Wheel      | Agent3 | Agent5    |                  4 |       4 |                    166 |   2.4% (0.024) |
+| Wheel      | Agent4 | Agent3    |                  1 |     159 |                    159 | 100.0% (1.000) |
+| Wheel      | Agent5 | Agent3    |                  1 |     173 |                    173 | 100.0% (1.000) |
+| Chain      | Agent1 | Agent2    |                  1 |     134 |                    134 | 100.0% (1.000) |
+| Chain      | Agent2 | Agent1    |                  2 |     124 |                    145 |  85.5% (0.855) |
+| Chain      | Agent2 | Agent3    |                  2 |      21 |                    145 |  14.5% (0.145) |
+| Chain      | Agent3 | Agent2    |                  2 |     145 |                    153 |  94.8% (0.948) |
+| Chain      | Agent3 | Agent4    |                  2 |       8 |                    153 |   5.2% (0.052) |
+| Chain      | Agent4 | Agent3    |                  2 |     114 |                    170 |  67.1% (0.671) |
+| Chain      | Agent4 | Agent5    |                  2 |      56 |                    170 |  32.9% (0.329) |
+| Chain      | Agent5 | Agent4    |                  1 |     160 |                    160 | 100.0% (1.000) |
+```
+
+### Temperature 1
+
+```text
+| Topology   | Sender | Recipient | Allowed recipients | Choices | Total explicit choices | Probability     |
+| ---------- | ------ | --------- | -----------------: | ------: | ---------------------: | --------------: |
+| Circle     | Agent1 | Agent2    |                  2 |      27 |                    124 |  21.8% (0.218) |
+| Circle     | Agent1 | Agent5    |                  2 |      97 |                    124 |  78.2% (0.782) |
+| Circle     | Agent2 | Agent1    |                  2 |      98 |                    118 |  83.1% (0.831) |
+| Circle     | Agent2 | Agent3    |                  2 |      20 |                    118 |  16.9% (0.169) |
+| Circle     | Agent3 | Agent2    |                  2 |      94 |                    101 |  93.1% (0.931) |
+| Circle     | Agent3 | Agent4    |                  2 |       7 |                    101 |   6.9% (0.069) |
+| Circle     | Agent4 | Agent3    |                  2 |      77 |                    101 |  76.2% (0.762) |
+| Circle     | Agent4 | Agent5    |                  2 |      24 |                    101 |  23.8% (0.238) |
+| Circle     | Agent5 | Agent1    |                  2 |      69 |                    104 |  66.3% (0.663) |
+| Circle     | Agent5 | Agent4    |                  2 |      35 |                    104 |  33.7% (0.337) |
+| Y topology | Agent1 | Agent3    |                  1 |     205 |                    205 | 100.0% (1.000) |
+| Y topology | Agent2 | Agent3    |                  1 |     181 |                    181 | 100.0% (1.000) |
+| Y topology | Agent3 | Agent1    |                  3 |      83 |                    195 |  42.6% (0.426) |
+| Y topology | Agent3 | Agent2    |                  3 |      75 |                    195 |  38.5% (0.385) |
+| Y topology | Agent3 | Agent4    |                  3 |      37 |                    195 |  19.0% (0.190) |
+| Y topology | Agent4 | Agent3    |                  2 |     151 |                    183 |  82.5% (0.825) |
+| Y topology | Agent4 | Agent5    |                  2 |      32 |                    183 |  17.5% (0.175) |
+| Y topology | Agent5 | Agent4    |                  1 |     175 |                    175 | 100.0% (1.000) |
+| Wheel      | Agent1 | Agent3    |                  1 |     174 |                    174 | 100.0% (1.000) |
+| Wheel      | Agent2 | Agent3    |                  1 |     168 |                    168 | 100.0% (1.000) |
+| Wheel      | Agent3 | Agent1    |                  4 |      96 |                    180 |  53.3% (0.533) |
+| Wheel      | Agent3 | Agent2    |                  4 |      69 |                    180 |  38.3% (0.383) |
+| Wheel      | Agent3 | Agent4    |                  4 |       6 |                    180 |   3.3% (0.033) |
+| Wheel      | Agent3 | Agent5    |                  4 |       9 |                    180 |   5.0% (0.050) |
+| Wheel      | Agent4 | Agent3    |                  1 |     197 |                    197 | 100.0% (1.000) |
+| Wheel      | Agent5 | Agent3    |                  1 |     181 |                    181 | 100.0% (1.000) |
+| Chain      | Agent1 | Agent2    |                  1 |     125 |                    125 | 100.0% (1.000) |
+| Chain      | Agent2 | Agent1    |                  2 |     150 |                    177 |  84.7% (0.847) |
+| Chain      | Agent2 | Agent3    |                  2 |      27 |                    177 |  15.3% (0.153) |
+| Chain      | Agent3 | Agent2    |                  2 |     162 |                    166 |  97.6% (0.976) |
+| Chain      | Agent3 | Agent4    |                  2 |       4 |                    166 |   2.4% (0.024) |
+| Chain      | Agent4 | Agent3    |                  2 |     104 |                    159 |  65.4% (0.654) |
+| Chain      | Agent4 | Agent5    |                  2 |      55 |                    159 |  34.6% (0.346) |
+| Chain      | Agent5 | Agent4    |                  1 |     155 |                    155 | 100.0% (1.000) |
+```
+
+### Agents failure to provide recipient
+
+| Topology   | Agent  | Model output              | Recipient assigned by code | Assigning file  | Count |
+| ---------- | ------ | ------------------------- | -------------------------- | --------------- | ----: |
+| Y topology | Agent2 | `ACTION: ANSWER; WORD: no` | Agent3                     | `Main/client.py` |     1 |

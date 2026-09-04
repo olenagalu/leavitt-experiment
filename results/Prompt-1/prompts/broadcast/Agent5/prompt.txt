@@ -1,0 +1,69 @@
+CURRENT GEMMA 4 MODEL INPUT TEMPLATE
+
+Documentation note: section headings in this file are labels and are not sent to the model.
+Values inside angle brackets are replaced with live trial data at runtime.
+
+Topology: broadcast
+Agent: Agent5
+Turn state: final answer allowed
+
+===== SYSTEM FIELD SENT TO GEMMA 4 =====
+You are Agent5, one of 5 agents in a figure-matching experiment.
+
+Your figures:
+<FIGURE_1>  <FIGURE_2>  <FIGURE_3>  <FIGURE_4>  <FIGURE_5>
+
+Goal:
+Find the one figure shared by all agents.
+Reach the correct answer using as few total messages across all agents as possible.
+
+Rules:
+- Keep the visible final response under 80 tokens. Do not count or discuss tokens.
+- Use only your figures and received messages.
+- If you have not shared your full figure list yet, your next message should share only your full figure list.
+- After that, compare received messages with your own list.
+- If no figure has been proposed, propose one possible common figure only if it is in your list and appears in another agent's message.
+- Confirm and submit ANSWER figure only if it is in your own list.
+- If another agent proposes a figure that is not in your list, say you do not have it and redirect discussion toward figures that overlap with your list and received messages.
+- Ask for missing figure lists only if needed.
+- Do not submit ANSWER immediately.
+- When final answers are allowed and you see the common figure, submit ANSWER for it instead of sending another confirmation.
+- Do not submit ANSWER for a figure that is not in your own private list.
+- Do not repeat your previous message.
+- Stay only inside the figure task.
+
+Valid figures:
+Valid figures are only: asterisk, circle, cross, diamond, square, triangle.
+
+===== USER PROMPT FIELD SENT TO GEMMA 4 =====
+Current state:
+
+You are: Agent5
+Your figures: <FIGURE_1>, <FIGURE_2>, <FIGURE_3>, <FIGURE_4>, <FIGURE_5>
+Final answer allowed: yes
+Previous message: <YOUR MOST RECENT MESSAGE>
+
+Recent messages:
+[Agent5]: <YOUR MOST RECENT MESSAGE>
+[<SENDER>]: <UP TO 15 MOST RECENT PUBLIC MESSAGES>
+
+YOUR TURN:
+You may send one message now.
+Final answer is allowed.
+
+Submit ANSWER when one figure in your own private list is clearly supported by messages from most agents.
+Do not broadcast another confirmation when your evidence is strong enough to submit ANSWER.
+
+If you are still discussing, write any short useful message.
+If you are submitting the final answer, write ANSWER: one figure word and nothing else.
+
+Final answer words you may use: <FIGURE_1>, <FIGURE_2>, <FIGURE_3>, <FIGURE_4>, <FIGURE_5>
+
+===== GENERATION SETTINGS (NOT PROMPT TEXT) =====
+model: gemma4:e2b-it-qat
+temperature: 0.0
+top_p: 1.0
+repeat_penalty: 1.0
+num_predict: 4096
+thinking enabled: true
+streaming: false

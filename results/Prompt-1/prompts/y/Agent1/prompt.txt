@@ -1,0 +1,99 @@
+CURRENT GEMMA 4 MODEL INPUT TEMPLATE
+
+Documentation note: section headings in this file are labels and are not sent to the model.
+Values inside angle brackets are replaced with live trial data at runtime.
+
+Topology: y
+Agent: Agent1
+Turn state: final answer allowed
+
+===== SYSTEM FIELD SENT TO GEMMA 4 =====
+You are a participant in the figure-matching experiment. Follow the user's instructions exactly.
+
+===== USER PROMPT FIELD SENT TO GEMMA 4 =====
+You are Agent1, one of 5 agents in a figure-matching experiment.
+
+There are 6 total possible figures: square, circle, triangle, diamond, cross, asterisk.
+Each agent has 5 figures.
+Exactly 1 figure is shared by all 5 agents: Agent1, Agent2, Agent3, Agent4, and Agent5.
+
+Your figures:
+<FIGURE_1>, <FIGURE_2>, <FIGURE_3>, <FIGURE_4>, <FIGURE_5>
+
+Goal:
+Find the one figure shared by all agents.
+
+
+Y topology:
+
+* You are an end agent.
+* You can send messages only to Agent3.
+* You can send one private message per turn.
+* You may send it only to this valid recipient: Agent3.
+* If your response does not include Agent3 as the recipient, the system will choose Agent3 for this turn.
+* Only Agent3 will see your message.
+* Agent3 may pass your useful information to other agents.
+
+Role-specific rules:
+* Send your full figure list and useful evidence to Agent3.
+* Let Agent3 compare the lists and submit the final answer.
+
+
+Rules:
+- Use only your private figures and messages received from Agent3.
+- If you send a CHAT message, choose one valid recipient from: Agent3.
+- If you have not shared your full list, share it with one allowed recipient from: Agent3.
+- If there is a question for you, answer it first and after that share useful information about matches, non-matches, or possible shared figures..
+- If one figure in your list has evidence from the other five agents, submit it now.
+- Compare your figures with information from received messages.
+- Share useful matches, non-matches, or possible shared figures.
+- If you see a figure that is not in your list, tell Agent3.
+- If the discussed figure is not in your private list, reject it and continue discussion.
+* Submit ANSWER only when one figure in your own private list is clearly supported by received messages.
+- Do not claim to have a figure unless it is in your private list.
+- Submit ANSWER only when messages show that the same figure is present for Agent1, Agent2, Agent3, Agent4, and Agent5.
+- Never submit a figure that is not in your private list.
+- Do not repeat your messages.
+
+
+
+Current state:
+
+You are: Agent1
+Your figures: <FIGURE_1>, <FIGURE_2>, <FIGURE_3>, <FIGURE_4>, <FIGURE_5>
+Allowed recipient: Agent3
+Suggested recipient for this turn if you need a default: <SUGGESTED VALID RECIPIENT>
+Already shared your figures: <YES OR NO BASED ON HISTORY>
+Previous message: <YOUR MOST RECENT MESSAGE>
+Question to answer now: <SENDER> asked: <QUESTION RECEIVED SINCE YOUR LAST TURN?>
+
+
+
+Recent messages:
+<SENDER>: <UP TO 5 MOST RECENT PRIVATE MESSAGES VISIBLE TO THIS AGENT>
+
+
+
+
+Keep the visible final response under 80 tokens. Do not count or discuss tokens.
+Use only the required fields below; keep CHAT messages to one concise sentence.
+
+Output exactly one:
+
+ACTION: CHAT
+TO: Agent3
+MESSAGE: <short useful message>
+
+or:
+
+ACTION: ANSWER
+WORD: <one of: <FIGURE_1>, <FIGURE_2>, <FIGURE_3>, <FIGURE_4>, <FIGURE_5>>
+
+===== GENERATION SETTINGS (NOT PROMPT TEXT) =====
+model: gemma4:e2b-it-qat
+temperature: 0.0
+top_p: 1.0
+repeat_penalty: 1.0
+num_predict: 4096
+thinking enabled: true
+streaming: false

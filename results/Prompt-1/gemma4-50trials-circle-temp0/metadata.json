@@ -1,0 +1,201 @@
+{
+  "batches": [
+    {
+      "average_messages": 17.44,
+      "average_time_seconds": 783.4302,
+      "batch_id": "circle-temperature-0",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/20260513-0157-leavitt-study/circle/temperature-0",
+      "full_batch_span_seconds": 40663.892826,
+      "longest_response_time_seconds": 120.412,
+      "longest_trial_time_seconds": 1736.27,
+      "model_name": "gemma4:e2b-it-qat",
+      "ollama_options": {
+        "num_predict": 4096,
+        "repeat_penalty": 1.0,
+        "temperature": 0.0,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.38,
+      "successes": 19,
+      "temperature": 0.0,
+      "topology": "circle",
+      "total_trial_time_seconds": 40555.709999999985
+    },
+    {
+      "batch_id": "circle-temperature-0.5",
+      "completed_trials": 0,
+      "directory": "/home/minds_user/Desktop/leavitt-report/20260513-0157-leavitt-study/circle/temperature-0.5",
+      "model_name": "gemma4:e2b-it-qat",
+      "ollama_options": {
+        "num_predict": 4096,
+        "repeat_penalty": 1.0,
+        "temperature": 0.5,
+        "top_p": 1.0
+      },
+      "status": "running",
+      "temperature": 0.5,
+      "topology": "circle"
+    },
+    {
+      "completed_trials": 0,
+      "model_name": "gemma4:e2b-it-qat",
+      "ollama_options": {
+        "num_predict": 4096,
+        "repeat_penalty": 1.0,
+        "temperature": 1.0,
+        "top_p": 1.0
+      },
+      "status": "pending",
+      "temperature": 1.0,
+      "topology": "circle"
+    },
+    {
+      "completed_trials": 0,
+      "model_name": "gemma4:e2b-it-qat",
+      "ollama_options": {
+        "num_predict": 4096,
+        "repeat_penalty": 1.0,
+        "temperature": 0.0,
+        "top_p": 1.0
+      },
+      "status": "pending",
+      "temperature": 0.0,
+      "topology": "y"
+    },
+    {
+      "completed_trials": 0,
+      "model_name": "gemma4:e2b-it-qat",
+      "ollama_options": {
+        "num_predict": 4096,
+        "repeat_penalty": 1.0,
+        "temperature": 0.5,
+        "top_p": 1.0
+      },
+      "status": "pending",
+      "temperature": 0.5,
+      "topology": "y"
+    },
+    {
+      "completed_trials": 0,
+      "model_name": "gemma4:e2b-it-qat",
+      "ollama_options": {
+        "num_predict": 4096,
+        "repeat_penalty": 1.0,
+        "temperature": 1.0,
+        "top_p": 1.0
+      },
+      "status": "pending",
+      "temperature": 1.0,
+      "topology": "y"
+    },
+    {
+      "completed_trials": 0,
+      "model_name": "gemma4:e2b-it-qat",
+      "ollama_options": {
+        "num_predict": 4096,
+        "repeat_penalty": 1.0,
+        "temperature": 0.0,
+        "top_p": 1.0
+      },
+      "status": "pending",
+      "temperature": 0.0,
+      "topology": "wheel"
+    },
+    {
+      "completed_trials": 0,
+      "model_name": "gemma4:e2b-it-qat",
+      "ollama_options": {
+        "num_predict": 4096,
+        "repeat_penalty": 1.0,
+        "temperature": 0.5,
+        "top_p": 1.0
+      },
+      "status": "pending",
+      "temperature": 0.5,
+      "topology": "wheel"
+    },
+    {
+      "completed_trials": 0,
+      "model_name": "gemma4:e2b-it-qat",
+      "ollama_options": {
+        "num_predict": 4096,
+        "repeat_penalty": 1.0,
+        "temperature": 1.0,
+        "top_p": 1.0
+      },
+      "status": "pending",
+      "temperature": 1.0,
+      "topology": "wheel"
+    },
+    {
+      "completed_trials": 0,
+      "model_name": "gemma4:e2b-it-qat",
+      "ollama_options": {
+        "num_predict": 4096,
+        "repeat_penalty": 1.0,
+        "temperature": 0.0,
+        "top_p": 1.0
+      },
+      "status": "pending",
+      "temperature": 0.0,
+      "topology": "chain"
+    },
+    {
+      "completed_trials": 0,
+      "model_name": "gemma4:e2b-it-qat",
+      "ollama_options": {
+        "num_predict": 4096,
+        "repeat_penalty": 1.0,
+        "temperature": 0.5,
+        "top_p": 1.0
+      },
+      "status": "pending",
+      "temperature": 0.5,
+      "topology": "chain"
+    },
+    {
+      "completed_trials": 0,
+      "model_name": "gemma4:e2b-it-qat",
+      "ollama_options": {
+        "num_predict": 4096,
+        "repeat_penalty": 1.0,
+        "temperature": 1.0,
+        "top_p": 1.0
+      },
+      "status": "pending",
+      "temperature": 1.0,
+      "topology": "chain"
+    }
+  ],
+  "completed_at": null,
+  "completed_batches": 1,
+  "cooling": {
+    "active": false,
+    "kind": null,
+    "started_at": null,
+    "until": null
+  },
+  "cooling_options": {
+    "between_temperatures_minutes": 5.0,
+    "between_topologies_minutes": 15.0
+  },
+  "model_name": "gemma4:e2b-it-qat",
+  "started_at": "2026-05-13T01:57:26.186858+00:00",
+  "status": "running",
+  "study_id": "20260513-0157-leavitt-study",
+  "study_kind": "leavitt",
+  "study_label": "Leavitt study",
+  "target_trials_per_batch": 50,
+  "temperature_data_file": "temperatures.jsonl",
+  "temperature_samples": 6,
+  "topologies": [
+    "circle",
+    "y",
+    "wheel",
+    "chain"
+  ],
+  "total_batches": 12,
+  "total_trials": 600
+}

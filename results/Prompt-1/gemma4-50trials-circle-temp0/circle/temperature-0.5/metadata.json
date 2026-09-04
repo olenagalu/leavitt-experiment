@@ -1,0 +1,18 @@
+{
+  "batch_id": "temperature-0.5",
+  "completed_at": null,
+  "completed_trials": 32,
+  "max_messages_per_trial": 40,
+  "model_name": "gemma4:e2b-it-qat",
+  "num_agents": 5,
+  "ollama_options": {
+    "num_predict": 4096,
+    "repeat_penalty": 1.0,
+    "temperature": 0.5,
+    "top_p": 1.0
+  },
+  "started_at": "2026-05-13T13:20:11.409444+00:00",
+  "status": "running",
+  "target_trials": 50,
+  "topology": "circle"
+}

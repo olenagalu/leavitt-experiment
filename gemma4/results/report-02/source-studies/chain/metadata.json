@@ -1,0 +1,121 @@
+{
+  "batches": [
+    {
+      "average_messages": 26.36,
+      "average_time_seconds": 1248.3413999999998,
+      "batch_id": "chain-temperature-0",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/run-7ab48f7b7ecb-chain-study/chain/temperature-0",
+      "ollama_options": {
+        "num_predict": 4096,
+        "repeat_penalty": 1.0,
+        "temperature": 0.0,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.4,
+      "successes": 20,
+      "temperature": 0.0,
+      "topology": "chain"
+    },
+    {
+      "average_messages": 21.84,
+      "average_time_seconds": 972.7849999999997,
+      "batch_id": "chain-temperature-0.05",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/run-7ab48f7b7ecb-chain-study/chain/temperature-0.05",
+      "ollama_options": {
+        "num_predict": 4096,
+        "repeat_penalty": 1.0,
+        "temperature": 0.05,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.4,
+      "successes": 20,
+      "temperature": 0.05,
+      "topology": "chain"
+    },
+    {
+      "average_messages": 23.54,
+      "average_time_seconds": 1087.1327999999999,
+      "batch_id": "chain-temperature-0.1",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/run-7ab48f7b7ecb-chain-study/chain/temperature-0.1",
+      "ollama_options": {
+        "num_predict": 4096,
+        "repeat_penalty": 1.0,
+        "temperature": 0.1,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.34,
+      "successes": 17,
+      "temperature": 0.1,
+      "topology": "chain"
+    },
+    {
+      "average_messages": 26.66,
+      "average_time_seconds": 1279.5714,
+      "batch_id": "chain-temperature-0.2",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/run-7ab48f7b7ecb-chain-study/chain/temperature-0.2",
+      "ollama_options": {
+        "num_predict": 4096,
+        "repeat_penalty": 1.0,
+        "temperature": 0.2,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.38,
+      "successes": 19,
+      "temperature": 0.2,
+      "topology": "chain"
+    },
+    {
+      "average_messages": 24.64,
+      "average_time_seconds": 1306.6024,
+      "batch_id": "chain-temperature-1",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/run-7ab48f7b7ecb-chain-study/chain/temperature-1",
+      "ollama_options": {
+        "num_predict": 4096,
+        "repeat_penalty": 1.0,
+        "temperature": 1.0,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.2,
+      "successes": 10,
+      "temperature": 1.0,
+      "topology": "chain"
+    }
+  ],
+  "completed_at": "2026-05-16T12:51:27.496061+00:00",
+  "completed_batches": 5,
+  "cooling": {
+    "active": false,
+    "kind": null,
+    "started_at": null,
+    "until": null
+  },
+  "cooling_options": {
+    "between_temperatures_minutes": 5.0,
+    "between_topologies_minutes": 15.0
+  },
+  "model": "gemma4:e2b-it-qat",
+  "ollama_restart_interval_trials": 25,
+  "ollama_warmup_model": "gemma4:e2b-it-qat",
+  "ollama_warmup_timeout_seconds_per_attempt": 180,
+  "started_at": "2026-05-13T00:08:44.237876+00:00",
+  "status": "complete",
+  "study_id": "run-7ab48f7b7ecb-chain-study",
+  "study_kind": "chain",
+  "study_label": "Chain study",
+  "target_trials_per_batch": 50,
+  "topologies": [
+    "chain"
+  ],
+  "total_batches": 5,
+  "total_trials": 250
+}

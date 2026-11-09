@@ -1,0 +1,122 @@
+{
+  "batches": [
+    {
+      "average_messages": 35.64,
+      "average_time_seconds": 1592.6372000000006,
+      "batch_id": "wheel-temperature-0",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/run-d8cf07e2f57d-wheel-study/wheel/temperature-0",
+      "ollama_options": {
+        "num_predict": 4096,
+        "repeat_penalty": 1.0,
+        "temperature": 0.0,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.34,
+      "successes": 17,
+      "temperature": 0.0,
+      "topology": "wheel"
+    },
+    {
+      "average_messages": 35.28,
+      "average_time_seconds": 1663.1311999999996,
+      "batch_id": "wheel-temperature-0.05",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/run-d8cf07e2f57d-wheel-study/wheel/temperature-0.05",
+      "ollama_options": {
+        "num_predict": 4096,
+        "repeat_penalty": 1.0,
+        "temperature": 0.05,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.4,
+      "successes": 20,
+      "temperature": 0.05,
+      "topology": "wheel"
+    },
+    {
+      "average_messages": 35.36,
+      "average_time_seconds": 1563.0367999999996,
+      "batch_id": "wheel-temperature-0.1",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/run-d8cf07e2f57d-wheel-study/wheel/temperature-0.1",
+      "ollama_options": {
+        "num_predict": 4096,
+        "repeat_penalty": 1.0,
+        "temperature": 0.1,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.4,
+      "successes": 20,
+      "temperature": 0.1,
+      "topology": "wheel"
+    },
+    {
+      "average_messages": 37.46,
+      "average_time_seconds": 1710.4574000000005,
+      "batch_id": "wheel-temperature-0.2",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/run-d8cf07e2f57d-wheel-study/wheel/temperature-0.2",
+      "ollama_options": {
+        "num_predict": 4096,
+        "repeat_penalty": 1.0,
+        "temperature": 0.2,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.34,
+      "successes": 17,
+      "temperature": 0.2,
+      "topology": "wheel"
+    },
+    {
+      "batch_id": "wheel-temperature-1",
+      "completed_trials": 25,
+      "directory": "/home/minds_user/Desktop/leavitt-report/run-d8cf07e2f57d-wheel-study/wheel/temperature-1",
+      "ollama_options": {
+        "num_predict": 4096,
+        "repeat_penalty": 1.0,
+        "temperature": 1.0,
+        "top_p": 1.0
+      },
+      "status": "incomplete",
+      "temperature": 1.0,
+      "topology": "wheel",
+      "successes": 12,
+      "success_rate": 0.48,
+      "average_messages": 31.6,
+      "average_time_seconds": 1483.688
+    }
+  ],
+  "completed_at": null,
+  "completed_batches": 4,
+  "cooling": {
+    "active": false,
+    "kind": null,
+    "started_at": null,
+    "until": null
+  },
+  "cooling_options": {
+    "between_temperatures_minutes": 5.0,
+    "between_topologies_minutes": 15.0
+  },
+  "model": "gemma4:e2b-it-qat",
+  "ollama_restart_interval_trials": 25,
+  "ollama_warmup_model": "gemma4:e2b-it-qat",
+  "ollama_warmup_timeout_seconds_per_attempt": 180,
+  "started_at": "2026-05-13T00:02:56.455067+00:00",
+  "status": "incomplete",
+  "study_id": "run-d8cf07e2f57d-wheel-study",
+  "study_kind": "wheel",
+  "study_label": "Wheel study",
+  "target_trials_per_batch": 50,
+  "topologies": [
+    "wheel"
+  ],
+  "total_batches": 5,
+  "total_trials": 250,
+  "curation_note": "Only the first 25 temperature-1 trials are included."
+}

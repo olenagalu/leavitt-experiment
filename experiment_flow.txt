@@ -1,0 +1,380 @@
+LEAVITT EXPERIMENT: ONE-TRIAL EXECUTION FLOW
+===========================================
+
+PURPOSE
+-------
+
+This document explains how one experimental trial moves from initialization to
+completion. The central point is that Site/dashboard_server.py controls the
+experiment. The five Jetsons provide local model inference, but they do not
+independently schedule turns or communicate directly with each other.
+
+
+1. CENTRAL SERVER RESPONSIBILITIES
+----------------------------------
+
+dashboard_server.py is the central controller. It:
+
+* creates private figure cards with exactly one common figure;
+* stores the correct common figure without revealing it to clients;
+* identifies each Jetson by its reserved TCP peer address;
+* assigns Agent1 through Agent5 and the allowed topology contacts;
+* selects which agent receives a turn;
+* tells that client whether a final answer is currently permitted;
+* validates and routes chat messages only through permitted edges;
+* tracks history, routes, per-agent counts, total messages, deliveries, turns,
+  trial time, generation timing, and reconnection pauses;
+* validates a submitted final answer;
+* ends the trial on a final answer or another stopping condition; and
+* writes raw and summarized results for automated batches.
+
+The clients connect only to the central server on TCP port 5001. A message from
+Agent1 to Agent3 is first sent to the server, checked against the topology, and
+then forwarded by the server to Agent3. There is no Agent1-to-Agent3 socket.
+
+
+2. SERVER AND JETSON COMMUNICATION DIAGRAM
+------------------------------------------
+
+                         Browser dashboard
+                      HTTP 192.168.0.140:5173
+                                |
+                                v
+                 +--------------------------------+
+                 | Central server Jetson          |
+                 | dashboard_server.py            |
+                 | TCP controller: port 5001      |
+                 | Cards, turns, routes, answers  |
+                 +--------------------------------+
+                    /       /       |       \       \
+                   /       /        |        \       \
+                  v       v         v         v       v
+              Jetson1  Jetson2   Jetson3   Jetson4  Jetson5
+              Agent1   Agent2    Agent3    Agent4   Agent5
+                 |        |         |         |        |
+              Ollama   Ollama    Ollama    Ollama   Ollama
+              :11434   :11434    :11434    :11434   :11434
+
+The lines above represent separate client/server TCP sessions. Which agents
+may exchange experiment messages is determined by the selected logical
+topology, not by physical network reachability.
+
+
+3. COMPLETE FLOW OF ONE TRIAL
+-----------------------------
+
+Step 1: server initialization
+
+The operator starts dashboard_server.py. DashboardExperiment starts its TCP
+listener and the HTTP dashboard server. Each client connects and answers a
+nickname_request with its hostname and model name. handle_new_client() checks
+the TCP peer IP against the reserved-address table and associates the client
+with its fixed agent identity.
+
+Step 2: trial request and topology selection
+
+The operator selects a topology and generation options in the browser. The
+dashboard calls the server API, and start_trial() marks the trial requested.
+run_experiment() waits for the required clients and builds the contact map:
+
+* build_circle_neighbors() for Circle;
+* build_chain_contacts() for Chain;
+* build_contact_map(..., get_y_contacts) for Y;
+* build_contact_map(..., get_wheel_contacts) for Wheel; or
+* all other active agents as recipients for Broadcast.
+
+Step 3: private-card generation
+
+generate_jetson_sets() constructs one card per agent and exactly one shared
+figure. The cards and correct common figure are kept in the server's active
+trial state. Each client receives an experiment_start payload containing only
+its own card, its identity, its valid contacts, the topology, and the selected
+Ollama options.
+
+Step 4: server selects a speaker
+
+The server owns the turn loop. choose_next_sock() selects an eligible client,
+and send_turn_request() sends that client a your_turn payload. The payload also
+contains can_answer, recent relevant messages, and topology-specific contacts.
+
+The clients do not negotiate or vote on who speaks next.
+
+Step 5: local prompt construction and inference
+
+Main/client.py receives your_turn and selects the appropriate prompt builder:
+
+* build_circle_prompt();
+* build_chain_prompt();
+* build_y_prompt();
+* build_wheel_prompt(); or
+* the broadcast prompt path in client.py.
+
+The prompt contains the private card, received history, allowed recipients,
+and output rules. generate_agent_reply() calls the local Ollama API at
+127.0.0.1:11434. No prompt or inference request is sent to a cloud model.
+
+Step 6: client parses the model output
+
+The topology-specific parser and parse_strict_response() classify the returned
+text. The response can be:
+
+* a chat message with a requested recipient;
+* a final answer when can_answer is true; or
+* an invalid response.
+
+Gemma 4 reasoning and visible output are handled separately. Only the actual
+visible response can become an experiment message or answer. Empty output is
+not replaced. Over-limit visible output is invalid rather than truncated.
+
+Step 7: client sends the response to the server
+
+send_json() writes the response as JSON over the existing TCP connection. The
+client does not send directly to another Jetson.
+
+Step 8: server validates and routes
+
+recv_turn_response() reads the response for the active trial. Stale responses
+from another trial ID are ignored. route_chat_message() handles Broadcast,
+while route_private_message() handles restricted topologies. A requested
+recipient must appear in the current speaker's contact map. Route records save
+the sender, receiver, original target, target source, text, trial ID, topology,
+and timing context.
+
+The server forwards accepted chat text to the permitted recipients, updates
+their histories, increments message and delivery counters, and selects another
+speaker.
+
+Step 9: repeated turns
+
+Steps 4 through 8 repeat while the trial is active. The server tracks which
+agents have spoken and calls answer_allowed_now() before each turn. In the
+current implementation, Circle permits an answer whenever active agents exist.
+For the other topologies, every active agent must have sent at least one valid
+message before can_answer becomes true.
+
+This permission gate does not require all agents to agree on a figure.
+
+Step 10: final-answer validation and termination
+
+When a permitted client submits a final answer, the server normalizes it and
+compares it with the common figure stored during initialization. The trial ends
+immediately:
+
+* matching answer: success;
+* nonmatching answer: failure.
+
+A trial can also end because the maximum-message limit is reached or because
+the operator stops it. The server broadcasts experiment_end and the result to
+the clients and dashboard.
+
+Step 11: result persistence
+
+For automated runs, persist_auto_batch_trial() appends the trial to
+trials.jsonl and its routes to messages.jsonl. At checkpoints it regenerates
+metadata.json and report.md with build_batch_report(). Study-level metadata
+and reports are maintained by write_full_study_files_locked() and
+build_full_study_report().
+
+
+4. LIFECYCLE FLOWCHART
+----------------------
+
++-----------------------+
+| Server initialization |
++-----------+-----------+
+            |
+            v
++-----------------------+
+| Select topology and   |
+| generation settings   |
++-----------+-----------+
+            |
+            v
++-----------------------+
+| Generate private      |
+| cards and correct     |
+| common figure         |
++-----------+-----------+
+            |
+            v
++-----------------------+
+| Assign contacts and   |
+| send private cards    |
++-----------+-----------+
+            |
+            v
++-----------------------+
+| Server selects agent  |<----------------------------------+
++-----------+-----------+                                   |
+            |                                               |
+            v                                               |
++-----------------------+                                   |
+| Local Gemma inference |                                   |
+| through Ollama        |                                   |
++-----------+-----------+                                   |
+            |                                               |
+            v                                               |
++-----------------------+                                   |
+| Server validates      |                                   |
+| response and target   |                                   |
++-----+------------+----+                                   |
+      |            |                                        |
+ chat |            | final answer                           |
+      v            v                                        |
++-----------+  +----------------------+                     |
+| Route to  |  | Compare with correct |                     |
+| permitted |  | common figure        |                     |
+| agents    |  +----------+-----------+                     |
++-----+-----+             |                                 |
+      |                   v                                 |
+      |          +----------------------+                   |
+      |          | Success or failure   |                   |
+      |          | recorded; trial ends |                   |
+      |          +----------------------+                   |
+      |                                                     |
+      +-----------------------------------------------------+
+
+
+5. DIFFERENCES AMONG TOPOLOGIES
+--------------------------------
+
+Broadcast
+    One accepted chat is forwarded to all other active agents. Information can
+    spread in one server-routed step.
+
+Circle
+    Each agent can send only to the previous or next Jetson-number neighbor.
+    Information may need several turns to cross the circle. The current
+    answer-permission rule is less restrictive than the other topologies:
+    answer_allowed_now() returns true when active agents exist.
+
+Chain
+    Endpoint agents have one neighbor; interior agents have two. Information
+    from one endpoint must pass through intermediates to reach the other end.
+
+Y
+    Agent3 joins Agents1 and 2 to Agent4, and Agent4 connects to Agent5.
+    Junction agents can receive more information than endpoints.
+
+Wheel
+    Agent3 is the hub. Peripheral agents cannot communicate directly with one
+    another, so information must pass through Agent3.
+
+The physical communication remains server-centered for every topology. The
+logical restrictions change only which routes the server accepts and which
+clients receive the message.
+
+
+6. CRITICAL STOPPING RULE: ONLY ONE AGENT NEEDS TO ANSWER
+---------------------------------------------------------
+
+A trial ends as soon as one permitted agent submits a final answer. The other
+four agents do not need to submit their own answers, confirm the proposed
+figure, or agree with one another.
+
+If the one submitted answer is correct, the trial is a success. If it is
+incorrect, the trial fails immediately.
+
+Therefore, the current dependent variable is whether an individual agent can
+produce the correct common figure using information made available through the
+communication network. It is not a five-agent consensus requirement.
+
+
+7. POSSIBLE EFFECT ON LOW SUCCESS RATES
+---------------------------------------
+
+The implementation verifies that a single permitted answer terminates a trial.
+It does not verify that this stopping rule is the cause of low success rates.
+That causal claim would require a controlled experiment with alternative
+stopping rules.
+
+The rule could plausibly reduce observed success because:
+
+* an agent may answer incorrectly before sufficient evidence has circulated;
+* another agent may possess corrective information but receive no later turn;
+* the first answer is not checked against other agents' conclusions;
+* endpoints, hubs, and junctions receive different amounts of information;
+* turn scheduling affects which agent accumulates evidence first; and
+* Circle's answer-permission rule differs from the other topologies.
+
+Centralized and decentralized topologies may be affected differently. For
+example, the Wheel hub can accumulate many messages, while a peripheral agent
+sees only hub-routed information. In a Chain, an endpoint may need several
+relays before it can observe distant evidence. These mechanisms are hypotheses,
+not confirmed explanations of the observed success rates.
+
+
+8. ALTERNATIVE STOPPING CONDITIONS FOR FUTURE WORK
+---------------------------------------------------
+
+These alternatives are methodological proposals only. They are not
+implemented in the current code and should not be applied retroactively.
+
+All five agents answer
+    Continue until every agent submits an answer. Report individual accuracy,
+    number agreeing, and whether all five are correct. This measures distributed
+    knowledge but increases messages and duration. It is not directly
+    comparable with the existing first-answer success rate.
+
+Majority agreement
+    End when at least three agents submit the same answer. This reduces the
+    influence of one premature response but may favor central agents or common
+    early errors. Efficiency metrics must include the additional coordination.
+
+Unanimous consensus
+    Require all five agents to agree. This measures group consensus most
+    strictly but can produce long or unresolved trials. A timeout and explicit
+    no-consensus result would be necessary.
+
+Additional-message window
+    After the first proposed answer, allow a fixed number of further messages
+    before accepting or revising it. This gives corrective evidence time to
+    circulate but introduces a new message-budget parameter.
+
+Evidence threshold
+    Permit an answer only after an agent has received information from a
+    defined number of distinct agents or paths. This could reduce early guesses,
+    but the threshold must account for topology-specific reachability and may
+    change what success means.
+
+Any future change should be implemented as a new experimental condition. The
+current stopping rule must remain available to reproduce Reports 1, 4, 5, and
+2 and to preserve comparability with historical results.
+
+
+9. CODE REFERENCE MAP
+---------------------
+
+Responsibility                 File and function
+-----------------------------  -----------------------------------------------
+Server entry point             Site/dashboard_server.py: main()
+Controller state               Site/dashboard_server.py: DashboardExperiment
+Client registration            DashboardExperiment.handle_new_client()
+Trial initialization           DashboardExperiment.start_trial()
+Execution loop                 DashboardExperiment.run_experiment()
+Card generation                generate_jetson_sets()
+Circle contact map             build_circle_neighbors()
+Chain contact map              build_chain_contacts()
+Y contact definition           get_y_contacts()
+Wheel contact definition       get_wheel_contacts()
+Generic fixed contact map      build_contact_map()
+Speaker selection              choose_next_sock()
+Answer permission              answer_allowed_now()
+Turn payload                   send_turn_request()
+Response receive               recv_turn_response()
+Broadcast/private routing      route_chat_message(), route_private_message()
+Answer normalization           normalize_figure_answer()
+Client model generation        Main/client.py: generate_agent_reply()
+Strict response parsing        Main/client.py: parse_strict_response()
+Topology prompts/parsers       Main/circle_client.py, chain_client.py,
+                               y_client.py, wheel_client.py
+Trial result storage           persist_auto_batch_trial()
+Batch report generation        build_batch_report()
+Study report generation        build_full_study_report()
+Study metadata persistence     write_full_study_files_locked()
+Reconnect and history restore  wait_for_trial_reconnect(),
+                               resume_payload_locked(), resume_history_locked()
+
+Gemma 3 and Gemma 4 use parallel Main and Site paths. Function names are the
+same where the control flow is shared; Gemma 4 adds thinking/visible-response
+integrity and timing behavior in its client and controller.

@@ -1,0 +1,311 @@
+LEAVITT EXPERIMENT: PROJECT STRUCTURE AND SYSTEM ARCHITECTURE
+============================================================
+
+1. RESEARCH OBJECTIVE
+---------------------
+
+This project recreates the Bavelas-Leavitt communication-network experiment
+with five small-language-model agents. Each agent receives a private card of
+figures. Exactly one figure is present on every card. The agents exchange
+messages through a controlled communication network and attempt to identify
+that common figure.
+
+The implementation uses small language models because each model must run
+locally on an NVIDIA Jetson. Local inference makes the system independent of
+cloud model APIs and allows the experiment to measure communication behavior
+under fixed hardware, model, topology, and generation settings.
+
+The principal research variables are:
+
+* model implementation: Gemma 3 or Gemma 4;
+* communication topology: Broadcast, Circle, Chain, Y, or Wheel;
+* generation temperature and related Ollama options;
+* success or failure of the submitted answer;
+* total messages and message deliveries;
+* trial duration and model-generation timing;
+* sender and recipient behavior; and
+* disconnections, pauses, and recovery events.
+
+The collected data can compare topologies within one model. A direct
+Gemma 3/Gemma 4 comparison must use only Gemma 3 Report 5 and Gemma 4
+Report 2 because those are the designated comparison datasets. Differences
+must not be attributed solely to model architecture when generation settings,
+timing behavior, prompts, or other conditions differ.
+
+
+2. REPOSITORY ARCHITECTURE
+--------------------------
+
+Repository root
+|-- README.md                         Existing project overview; preserved unchanged
+|-- requirements.txt                  Python package requirement for the client
+|-- project_structure.txt             This architecture and data guide
+|-- project_launch.txt                Deployment and operating guide
+|-- experiment_flow.txt               One-trial lifecycle and stopping rule
+|-- G3_G4_summary/
+|   |-- G3-G4_report.pdf              Static comparison report
+|   |-- powerbi_report_link.md         Interactive Power BI link and access note
+|   `-- tables/
+|       |-- gemma3_reports_1_4_5_tables.xlsx
+|       `-- gemma4_report_02_tables.xlsx
+|-- gemma3/
+|   |-- Main/
+|   |   |-- client.py                 Executable Jetson client
+|   |   |-- shared_features_client.py Shared prompt sections and output rules
+|   |   |-- circle_client.py          Circle prompt construction and parsing
+|   |   |-- chain_client.py           Chain prompt construction and parsing
+|   |   |-- y_client.py               Y prompt construction and parsing
+|   |   `-- wheel_client.py           Wheel prompt construction and parsing
+|   |-- Site/
+|   |   |-- dashboard_server.py       Central controller and HTTP/TCP server
+|   |   |-- app.js                    Browser dashboard behavior
+|   |   |-- index.html                Dashboard page
+|   |   |-- styles.css                Dashboard presentation
+|   |   `-- minds-logo.png            Dashboard image asset
+|   |-- scripts/
+|   |   `-- configure_passwordless_ollama_restart.sh
+|   `-- results/
+|       |-- report-01/                 Valid Gemma 3 Report 1 archive
+|       |-- report-04/                 Valid Gemma 3 Report 4 archive
+|       |-- report-05/                 Valid Gemma 3 Report 5 archive
+|       `-- summary/
+|           `-- gemma3_reports_1_4_5_tables.xlsx
+`-- gemma4/
+    |-- Main/                          Same client-module roles as Gemma 3
+    |-- Site/                          Gemma 4 controller and dashboard
+    |-- scripts/
+    |   `-- configure_passwordless_ollama_restart.sh
+    |-- tests/
+    |   |-- test_gemma4_timing.py
+    |   |-- test_ip_identity.py
+    |   |-- test_ollama_maintenance.py
+    |   `-- test_reconnect_resume.py
+    `-- results/
+        `-- report-02/                 Valid Gemma 4 Report 2 archive
+            |-- manifest.json
+            |-- source-studies/
+            |-- raw/
+            `-- analysis/
+                `-- gemma4_report_02_tables.xlsx
+
+Each report manifest records the model, included topologies, temperatures,
+sample counts, file sizes, and SHA-256 hashes. Each raw condition directory
+contains:
+
+* trials.jsonl: one complete trial record per line;
+* messages.jsonl: routed messages for those trials;
+* metadata.json: batch identity, settings, and completion status; and
+* report.md: the generated batch summary and detailed tables.
+
+The original repository's Old, Notes, duplicate demo, temporary output, cache,
+and standalone diagnostic-monitor material is not part of the curated tree.
+The active browser dashboard remains in each model's Site directory.
+
+
+3. HARDWARE ARCHITECTURE
+------------------------
+
+The physical experiment uses six Jetson devices:
+
+* one central server Jetson; and
+* five client Jetsons, one for each language-model agent.
+
+The central server Jetson runs Site/dashboard_server.py. That process performs
+both central experiment control and presentation duties:
+
+* TCP server on port 5001 for the five clients;
+* HTTP server on port 5173 for the browser dashboard;
+* card generation and correct-answer storage;
+* topology construction and enforcement;
+* turn scheduling and message routing;
+* answer validation and trial termination; and
+* result persistence under ~/Desktop/leavitt-report unless LEAVITT_DATA_DIR
+  overrides that location.
+
+Each client Jetson runs Main/client.py from a flat deployment directory. It
+connects to the central server, receives a private card and turn instructions,
+constructs a topology-specific prompt, calls its own Ollama service at
+127.0.0.1:11434, parses the returned text, and sends the parsed response to the
+server over TCP.
+
+Python coordinates networking and experiment state. Ollama hosts the local
+Gemma model. No cloud inference is required during a trial.
+
+
+4. NETWORK AND WI-FI CONFIGURATION
+----------------------------------
+
+The experiment uses an isolated local Wi-Fi network. The verified reserved
+addresses recorded in the working configuration are:
+
+device      address
+----------- -------------
+server      192.168.0.140
+jetson1     192.168.0.151
+jetson2     192.168.0.152
+jetson3     192.168.0.153
+jetson4     192.168.0.154
+jetson5     192.168.0.155
+
+The server identifies a connecting client from its TCP peer address and maps
+that address to jetson1 through jetson5 and Agent1 through Agent5. An
+unconfigured address is rejected. This makes the router reservations part of
+the experiment configuration, not merely a convenience.
+
+The key ports are:
+
+* TCP 5001: JSON-line client/server experiment traffic;
+* HTTP 5173: browser dashboard; and
+* TCP 11434 on each client loopback interface: local Ollama API.
+
+SSH maintenance uses minds_user and the reserved IP addresses. The code does
+not rely on .local names. Passwords, private keys, Wi-Fi credentials, and other
+secrets are intentionally absent from this repository.
+
+
+5. MULTI-AGENT EXECUTION
+------------------------
+
+dashboard_server.py creates one private list for each participating agent with
+generate_jetson_sets(). The construction guarantees exactly one common figure.
+The server retains the correct common figure and sends only the appropriate
+private list to each client.
+
+The client does not choose when it may speak. The server sends a your_turn
+message containing the topology, allowed contacts, recent relevant messages,
+generation options, and whether a final answer is currently permitted. The
+client then builds a prompt with the selected topology module and calls Ollama.
+
+The client may return a chat message, a final answer, or an invalid response.
+The server checks the target and routes a valid chat only to contacts allowed
+by the selected topology. A client never opens a direct connection to another
+client.
+
+The server counts messages, deliveries, per-agent messages, turns, elapsed
+active time, disconnection pauses, and model timing fields. Automated batches
+append trials.jsonl and messages.jsonl and periodically regenerate metadata and
+Markdown reports.
+
+
+6. NETWORK TOPOLOGIES
+---------------------
+
+Broadcast
+    A speaker's valid message is delivered to every other active agent. The
+    server is still the sole router.
+
+Circle
+    Agents are ordered by Jetson number. Each agent can communicate with the
+    previous and next agent, with the ends wrapping around. The server builds
+    this neighbor map in build_circle_neighbors().
+
+Chain
+    Agents are ordered by Jetson number. Each endpoint has one neighbor and
+    each interior agent has the adjacent agents as contacts. The server builds
+    this map in build_chain_contacts().
+
+Y
+    The fixed contacts are 1-3, 2-3, 3-4, and 4-5. Agent3 is the upper
+    junction and Agent4 connects the junction to Agent5. get_y_contacts()
+    defines this map.
+
+Wheel
+    Agent3 is the hub. Agents1, 2, 4, and 5 communicate with Agent3, while
+    Agent3 can communicate with all four peripheral agents. get_wheel_contacts()
+    defines this map.
+
+route_private_message() and route_chat_message() validate requested targets.
+If a private target is invalid, the server may assign a valid contact and marks
+the route as server_assigned. The saved route retains the original target and
+target-source metadata so analysis can distinguish model-selected and fallback
+routes.
+
+
+7. GEMMA 3 AND GEMMA 4 IMPLEMENTATIONS
+--------------------------------------
+
+Gemma 3 client defaults
+    model: gemma3:4b
+    num_predict: 77
+    num_ctx: 2048
+    top_p: 1.0
+    repeat_penalty: 1.0
+    local request timeout: 90 seconds
+
+Gemma 4 client defaults
+    model: gemma4:e2b-it-qat
+    thinking: enabled
+    num_predict: 4096
+    visible-response limit: 80 token-like units
+    top_p: 1.0
+    repeat_penalty: 1.0
+    local request timeout: 180 seconds
+
+Gemma 4's Ollama response can contain a reasoning stream and a visible
+response. Main/client.py times them separately. Only text actually returned as
+the visible response is eligible for experiment parsing, routing, and history.
+Thinking text is not inserted into the agent conversation. An empty visible
+response stays empty. A response longer than the 80-unit visible limit is
+recorded as invalid without truncation or synthetic replacement.
+
+The 4096 Gemma 4 generation ceiling is a shared safety allowance for thinking
+and visible output. It is not comparable to Gemma 3's 77-token visible-output
+ceiling. This, together with model and timing differences, must be considered
+when interpreting cross-model results.
+
+
+8. EXPERIMENTAL RESULTS
+-----------------------
+
+The curated archive contains all designated valid reports:
+
+* Gemma 3 Report 1: 600 trials across Circle, Chain, Y, and Wheel at
+  temperatures 0, 0.5, and 1. Only the two complete source studies are kept.
+* Gemma 3 Report 4: 1,000 trials across the same four topologies at
+  temperatures 0, 0.05, 0.1, 0.2, and 1.
+* Gemma 3 Report 5: 1,000 trials with the same topology/temperature grid.
+* Gemma 4 Report 2: 975 included trials. Circle, Chain, and Y contain 250
+  trials each. Wheel contains 225 included trials because temperature 1 is
+  limited to the first 25 of 50 planned trials.
+
+The source Gemma 4 Wheel temperature-1 file contained 30 records. Only source
+trials 1-25 are included in this repository. Source trial IDs 226-230 are
+excluded after the reported Jetson filesystem failure. The manifest documents
+this curation explicitly; no missing trials are imputed.
+
+Measured fields include success rate, completed and target trials, total and
+average messages, elapsed trial time, per-agent messages, submitted and correct
+figures, route metadata, reconnect pauses, and—where available—Gemma 4 thinking
+and visible-response timing.
+
+The direct comparison in G3_G4_summary uses only Gemma 3 Report 5 and Gemma 4
+Report 2. It includes the static PDF, an interactive Power BI link, and copies
+of the valid Excel tables. The Power BI link may require access through the
+associated Microsoft tenant.
+
+
+9. RELIABILITY AND MAINTENANCE
+------------------------------
+
+Earlier runs experienced Ollama disconnections and memory pressure. The Gemma
+3 client explicitly uses a 2048-token context allocation instead of Ollama's
+larger default. Automated studies can restart Ollama every 25 completed trials
+and warm the selected model before continuing. The narrow sudoers helper in
+scripts/configure_passwordless_ollama_restart.sh permits only the required
+ollama.service and leavitt-client.service restart commands.
+
+If a required Jetson disconnects during a trial, the server pauses the active
+trial, excludes the pause from experiment time, waits for the same configured
+agent to reconnect, rebuilds that agent's received history, and resumes the
+same trial. It does not silently replace an agent.
+
+Standalone high-frequency diagnostics were used during troubleshooting but
+are not required for normal execution and are excluded from the repository.
+Essential timing, error handling, reconnection metadata, and result persistence
+remain in the runtime.
+
+Some Jetsons were reported to have entered read-only filesystem states. That
+observation is preserved as a limitation; this repository does not assert an
+unverified root cause. Before deploying or cleaning a device, confirm that its
+filesystem is writable and healthy. Do not attempt repair on a mounted
+read-only or damaged filesystem without a separate maintenance decision.

@@ -1,0 +1,416 @@
+LEAVITT EXPERIMENT: DEPLOYMENT AND OPERATING GUIDE
+=================================================
+
+This guide describes the repository layout and the verified flat deployment
+layout used by the Jetsons. Run commands from the repository root unless a
+step explicitly says that it runs on a Jetson.
+
+
+1. REQUIRED SYSTEM
+------------------
+
+Hardware
+* One server Jetson.
+* Five client Jetsons named jetson1 through jetson5.
+* An isolated Wi-Fi router with the reserved addresses listed below.
+* A browser on a machine that can reach the server Jetson.
+
+Software
+* Linux on all Jetsons.
+* Python 3.
+* The Python requests package on every client Jetson.
+* Ollama installed and managed as ollama.service on every client Jetson.
+* OpenSSH client on the server and SSH server on the clients.
+* leavitt-client.service installed on each client Jetson.
+
+Install the Python dependency in an appropriate environment:
+
+    python3 -m pip install -r requirements.txt
+
+The exact Ollama package version installed on the working Jetsons was not
+available in the local archive and must be confirmed on the devices before a
+new deployment is declared reproducible:
+
+    ollama --version
+    systemctl status ollama.service --no-pager
+
+
+2. MODEL INSTALLATION
+---------------------
+
+Gemma 3 uses:
+
+    ollama pull gemma3:4b
+    ollama show gemma3:4b
+
+Gemma 4 uses:
+
+    ollama pull gemma4:e2b-it-qat
+    ollama show gemma4:e2b-it-qat
+
+Run the selected pair of commands on all five client Jetsons. The Gemma 4
+study preflight checks that all clients report gemma4:e2b-it-qat. Do not mix
+Gemma 3 and Gemma 4 clients in one study.
+
+
+3. NETWORK CONFIGURATION
+------------------------
+
+Connect all six Jetsons to the isolated experiment Wi-Fi network. The reserved
+addresses expected by dashboard_server.py are:
+
+    server   192.168.0.140
+    jetson1  192.168.0.151
+    jetson2  192.168.0.152
+    jetson3  192.168.0.153
+    jetson4  192.168.0.154
+    jetson5  192.168.0.155
+
+On each device, inspect its assigned address:
+
+    hostname
+    ip -brief address
+
+From the server, verify basic reachability:
+
+    ping -c 2 192.168.0.151
+    ping -c 2 192.168.0.152
+    ping -c 2 192.168.0.153
+    ping -c 2 192.168.0.154
+    ping -c 2 192.168.0.155
+
+The server validates the TCP peer IP. A client using an unexpected address is
+rejected even if its hostname looks correct. Correct the router reservation or
+device connection instead of weakening that identity check.
+
+
+4. SSH ACCESS
+-------------
+
+Use the fixed addresses, not .local names:
+
+    ssh minds_user@192.168.0.151
+    ssh minds_user@192.168.0.152
+    ssh minds_user@192.168.0.153
+    ssh minds_user@192.168.0.154
+    ssh minds_user@192.168.0.155
+
+The dashboard's reload and maintenance actions require passwordless SSH from
+the server to the clients and narrow passwordless sudo permissions for service
+restarts. Do not store passwords or private keys in the repository.
+
+On each Jetson, the supplied helper can install the narrow restart rule:
+
+    cd ~/Desktop/leavitt-experiment
+    sh configure_passwordless_ollama_restart.sh
+
+It permits only restarts of ollama.service and leavitt-client.service. It may
+request the user's sudo password during its one-time installation.
+
+
+5. SELECT GEMMA 3 OR GEMMA 4
+----------------------------
+
+The repository has separate gemma3 and gemma4 source trees. Choose one tree
+for the entire deployment.
+
+Repository layout:
+
+    gemma3/Main/client.py
+    gemma3/Site/dashboard_server.py
+
+or:
+
+    gemma4/Main/client.py
+    gemma4/Site/dashboard_server.py
+
+Jetson deployment layout:
+
+    ~/Desktop/leavitt-experiment/client.py          client Jetsons
+    ~/Desktop/leavitt-experiment/dashboard_server.py server Jetson
+
+The deployment is flat. Do not copy the Main and Site directories themselves
+to the Jetsons and then assume repository-relative imports will work.
+
+
+6. DEPLOY CLIENT FILES
+----------------------
+
+Set MODEL_DIR to gemma3 or gemma4 in the local repository shell. The following
+example uses Gemma 4:
+
+    MODEL_DIR=gemma4
+
+Copy the executable client and its topology modules to each client. Run these
+commands individually for each address or use an audited deployment script:
+
+    scp "$MODEL_DIR/Main/client.py" \
+        "$MODEL_DIR/Main/shared_features_client.py" \
+        "$MODEL_DIR/Main/circle_client.py" \
+        "$MODEL_DIR/Main/chain_client.py" \
+        "$MODEL_DIR/Main/y_client.py" \
+        "$MODEL_DIR/Main/wheel_client.py" \
+        minds_user@192.168.0.151:~/Desktop/leavitt-experiment/
+
+Repeat for .152, .153, .154, and .155.
+
+Copy the maintenance helper if it is not already installed:
+
+    scp "$MODEL_DIR/scripts/configure_passwordless_ollama_restart.sh" \
+        minds_user@192.168.0.151:~/Desktop/leavitt-experiment/
+
+Repeat for the other four clients. Before restarting services, confirm that
+the destination filesystem is writable:
+
+    ssh minds_user@192.168.0.151 \
+        'findmnt -no TARGET,OPTIONS /; touch ~/Desktop/leavitt-experiment/.write-test && rm ~/Desktop/leavitt-experiment/.write-test'
+
+If touch fails or the mount options contain ro, stop. Do not deploy or repair
+the filesystem as part of an experiment launch.
+
+
+7. DEPLOY THE SERVER DASHBOARD
+------------------------------
+
+Copy the selected Site files directly into the server's flat directory:
+
+    scp "$MODEL_DIR/Site/dashboard_server.py" \
+        "$MODEL_DIR/Site/app.js" \
+        "$MODEL_DIR/Site/index.html" \
+        "$MODEL_DIR/Site/styles.css" \
+        "$MODEL_DIR/Site/minds-logo.png" \
+        minds_user@192.168.0.140:~/Desktop/leavitt-experiment/
+
+Site/dashboard_server.py is the normal server entry point. The retired
+diagnostic launcher is not required.
+
+
+8. START AND VERIFY OLLAMA
+--------------------------
+
+On every client:
+
+    sudo systemctl restart ollama.service
+    systemctl is-active ollama.service
+    curl -s http://127.0.0.1:11434/api/tags
+
+Verify that the selected model appears in the response. A direct Gemma 4
+smoke test is:
+
+    curl -s http://127.0.0.1:11434/api/generate \
+        -H 'Content-Type: application/json' \
+        -d '{"model":"gemma4:e2b-it-qat","prompt":"Reply with READY.","stream":false,"think":false}'
+
+For Gemma 3, replace the model with gemma3:4b and omit the think field if the
+installed Ollama version does not accept it.
+
+
+9. START OR RESTART CLIENT SERVICES
+-----------------------------------
+
+On each client:
+
+    sudo systemctl restart leavitt-client.service
+    systemctl status leavitt-client.service --no-pager
+    journalctl -u leavitt-client.service -n 50 --no-pager
+
+The service must execute the flat file:
+
+    ~/Desktop/leavitt-experiment/client.py
+
+Confirm the installed service definition before relying on that path:
+
+    systemctl cat leavitt-client.service
+
+Only one service-owned client process should run per Jetson:
+
+    pgrep -af 'python3.*client.py'
+
+
+10. START THE CENTRAL SERVER
+----------------------------
+
+SSH to the server and run:
+
+    cd ~/Desktop/leavitt-experiment
+    python3 dashboard_server.py \
+        --http-host 0.0.0.0 \
+        --http-port 5173 \
+        --tcp-host 0.0.0.0 \
+        --tcp-port 5001
+
+The expected startup messages identify the dashboard URL and TCP port. In a
+second server terminal, verify listeners:
+
+    ss -ltn | grep -E ':5001|:5173'
+
+Open this address from a browser on the isolated network:
+
+    http://192.168.0.140:5173/
+
+The dashboard should show five connected clients. If a client is absent,
+check its service journal, Ollama status, address, and connection to TCP 5001.
+
+
+11. CONFIGURE A TRIAL
+---------------------
+
+Use the browser controls to select:
+
+* model-compatible deployment;
+* topology: Broadcast, Circle, Chain, Y, or Wheel;
+* five agents for the standard experiment;
+* temperature;
+* top_p and repeat penalty where exposed;
+* maximum-message setting; and
+* individual trial or automated-study mode.
+
+The server sends the selected generation options to clients. Do not edit a
+single client to use a different model or generation setting during a study.
+
+For Gemma 3, the configured defaults include num_predict 77 and num_ctx 2048.
+For Gemma 4, thinking is enabled, num_predict is 4096, and visible output is
+limited to 80 token-like units.
+
+
+12. RUN AN INDIVIDUAL TRIAL
+---------------------------
+
+1. Confirm five clients are connected.
+2. Select the topology and generation settings.
+3. Start the trial in the dashboard.
+4. Watch the current speaker, routes, message count, and elapsed time.
+5. Allow the server to finish on the first permitted final answer or the
+   configured maximum-message condition.
+6. Review the submitted figure, correct figure, success state, and timing.
+
+Do not start another trial while a previous one is active or paused for a
+reconnecting client.
+
+
+13. RUN AN AUTOMATED STUDY
+--------------------------
+
+The dashboard supports model-specific automated studies. Before starting:
+
+* confirm all five clients report the expected model;
+* confirm service-restart permissions;
+* confirm the report destination has enough free space;
+* confirm every filesystem is writable; and
+* record the topology, temperatures, target trials, and cooling settings.
+
+Automated studies save data under:
+
+    ~/Desktop/leavitt-report/
+
+or the directory selected with LEAVITT_DATA_DIR when the server starts:
+
+    LEAVITT_DATA_DIR=/approved/path python3 dashboard_server.py \
+        --http-host 0.0.0.0 --http-port 5173 \
+        --tcp-host 0.0.0.0 --tcp-port 5001
+
+The server can restart Ollama after each unfinished 25-trial interval and warm
+the model before continuing. Do not manually restart clients or Ollama during
+an active trial unless recovery requires it and the event is documented.
+
+
+14. MONITOR EXECUTION
+---------------------
+
+Use the dashboard for experiment state. Use these operating checks only when
+needed:
+
+    systemctl is-active ollama.service
+    systemctl is-active leavitt-client.service
+    journalctl -u leavitt-client.service -n 100 --no-pager
+    free -h
+    df -h
+    findmnt -no TARGET,OPTIONS /
+
+Standalone continuous diagnostic monitors are retired from normal operation.
+Do not start diagnostics_monitor.py as part of a routine study.
+
+
+15. STOP, RESUME, OR RESTART SAFELY
+-----------------------------------
+
+To stop an individual or automated run, first use the dashboard's stop action.
+Wait until the controller reports that no trial is active. Then stop the server
+with Ctrl-C.
+
+If a client disconnects during a trial, the server preserves the active trial
+and waits for that configured client to reconnect. Restore Ollama and the
+client service on the affected Jetson. The server rebuilds its received history
+and resumes the same trial.
+
+If the dashboard's Reload Jetsons action is used, no trial or automated study
+may be active. The server issues this command through SSH:
+
+    sudo -n /usr/bin/systemctl restart leavitt-client.service
+
+Do not kill unrelated Python or Ollama processes with broad pkill patterns.
+
+
+16. LOCATE AND INTERPRET RESULTS
+--------------------------------
+
+A condition directory contains:
+
+    trials.jsonl
+    messages.jsonl
+    metadata.json
+    report.md
+
+trials.jsonl is the authoritative per-trial record. messages.jsonl contains
+the routes associated with those trials. metadata.json records the requested
+configuration and progress. report.md is a generated summary and table view.
+
+Copy completed study directories off the server before analysis. Preserve the
+original files and perform cleaning in a separate working directory.
+
+The curated repository contains Gemma 3 Reports 1, 4, and 5 and Gemma 4
+Report 2. The direct comparison uses only Gemma 3 Report 5 and Gemma 4
+Report 2. Gemma 4 Wheel temperature 1 contains only the first 25 source trials
+in the curated repository.
+
+
+17. COMMON FAILURES
+-------------------
+
+Client missing from dashboard
+    Check IP reservation, Wi-Fi, service journal, and TCP connectivity. The
+    client must originate from its configured 192.168.0.x address.
+
+Ollama preflight failure
+    Check ollama.service, localhost port 11434, available memory, and whether
+    the required model is installed.
+
+Repeated client disconnects
+    Inspect the service journal and memory. Let the server preserve and resume
+    the trial. Do not count paused time as experiment time.
+
+Filesystem is read-only
+    Stop deployment and experiment writes on that device. Preserve existing
+    data. Record the condition and arrange separate filesystem maintenance.
+
+Wrong model reported
+    Stop the study. Deploy the same selected model and client implementation
+    on all five clients before retrying.
+
+
+18. SAFE SHUTDOWN
+-----------------
+
+Stop or complete the active study and confirm result files are flushed. Then
+shut down clients one at a time:
+
+    ssh minds_user@192.168.0.151 'sudo systemctl poweroff'
+
+Repeat for .152 through .155. Shut down the server last:
+
+    sudo systemctl poweroff
+
+The automated-study completion path can also request client power-off followed
+by server power-off, but only when its passwordless power-off preflight passes.
+Confirm that site-specific power-off permissions are installed before relying
+on that behavior.

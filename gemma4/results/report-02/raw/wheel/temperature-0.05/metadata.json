@@ -1,0 +1,19 @@
+{
+  "batch_id": "temperature-0.05",
+  "completed_at": "2026-05-14T22:13:43.560633+00:00",
+  "completed_trials": 50,
+  "max_messages_per_trial": 50,
+  "model": "gemma4:e2b-it-qat",
+  "num_agents": 5,
+  "ollama_options": {
+    "num_predict": 4096,
+    "repeat_penalty": 1.0,
+    "temperature": 0.05,
+    "top_p": 1.0
+  },
+  "ollama_restart_interval_trials": 25,
+  "started_at": "2026-05-13T22:39:43.595619+00:00",
+  "status": "complete",
+  "target_trials": 50,
+  "topology": "wheel"
+}

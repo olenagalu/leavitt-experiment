@@ -1,0 +1,31 @@
+.DS_Store
+__pycache__/
+.pycache/
+*.pyc
+.pytest_cache/
+~$*.xlsx
+
+# Local Codex and build artifacts
+.codex-work/
+.codex_tmp/
+.codex_artifacts/
+.netlify/
+outputs/
+tmp/
+progress_reports/
+
+# Local review and duplicate source material
+AGENT.md
+Demo/
+extraMain:Site/
+
+# Retired standalone diagnostics
+**/diagnostics/
+**/diagnostics-*/
+**/*-diagnostics/
+**/leavitt-diagnostics*/
+**/server-diagnostics/
+**/system-health-*.jsonl
+**/system-streams-*.jsonl
+**/monitor-console.log
+**/*.lock

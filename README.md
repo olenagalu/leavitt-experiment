@@ -1,112 +1,62 @@
-# Replicating Bavelas-Leavitt Experiment with SLMs
+# Replicating the Bavelas-Leavitt Experiment with SLMs
 
-This project replicates the Bavelas-Leavitt communication experiment using autonomous agents powered by locally hosted **Small Language Models (SLMs)**. Instead of human participants exchanging information through different communication networks, the agents run with Ollama on **NVIDIA Jetson Nano Developer Kit units** and communicate through a TCP server on a local network.
+This project replicates the Bavelas-Leavitt communication experiment using autonomous agents powered by locally hosted small language models. Instead of human participants exchanging information through different communication networks, the agents run with Ollama on NVIDIA Jetson devices and communicate through a TCP server on a local network.
 
 Each trial gives agents private figure lists with exactly one figure shared by all participating agents. Agents communicate only with others allowed by the selected topology, compare received information with their own lists, and submit a final answer when they identify the common figure.
 
-The project studies how communication structure affects:
-* Success rate
-* Number of messages
-* Time required to reach an answer
-* Agent coordination
-* Information flow
+## Demo
 
-Broadcast trials can use 2-5 agents. The circle, chain, Y, and wheel topologies are configured for five Jetson agents.
+[Open the interactive browser demo](https://olenagalu.github.io/leavitt-experiment/)
 
-The models run locally and do not require internet access during the experiment.
+The demo recreates the dashboard interface with simulated agents, messages, network routes, and results. It does not require access to the live Jetson network.
 
-## Public Demo
+The image below is a visual of the platform. The live platform runs over the lab's local Wi-Fi network and is not accessible from the internet, so it can only be viewed while in the lab.
 
-[Open the interactive Leavitt Experiment demo](https://minds-leavitt-demo.netlify.app/)
+![Leavitt experiment dashboard](docs/dashboard-screenshot.png)
 
-The public demo reproduces the current dashboard with simulated Jetson agents, topology-based message routing, conversations, and trial results. It does not connect to the private Jetson network or expose live experiment data.
+## Communication topologies
 
-### Dashboard User Interface
+- **Broadcast:** every message is visible to all participating agents.
+- **Circle:** each agent communicates with its two immediate neighbors.
+- **Chain:** agents communicate only with adjacent agents in a line.
+- **Y:** communication follows a branched network with a central junction.
+- **Wheel:** peripheral agents communicate through a central agent.
 
-<p align="center">
-  <img src="./Demo/public-demo-ui.png" alt="Leavitt Experiment public demo showing the topology controls, animated Jetson network, event feed, chats, and success table" width="100%">
-</p>
+The experiment records whether a trial succeeds, the submitted and correct figures, elapsed time, full trial duration, per-turn response waits, total messages, routes between agents, model settings, and device temperatures during automated studies. Gemma 4 reports include separate timing tables for every trial and each topology, plus the longest response and longest trial.
 
-## Supported Topologies
+## Gemma 4 response handling
 
-* 🌐 **Broadcast** - every agent can communicate with every other agent.
-* ⭕ **Circle** - each agent communicates with two adjacent agents.
-* ⛓️ **Chain** - agents communicate through a linear network.
-* 🔀 **Y Structure** - agents communicate through a branching structure.
-* 🎡 **Wheel** - one central agent communicates with all other agents.
+The active client uses `gemma4:e2b-it-qat` with thinking enabled. Ollama returns the reasoning trace separately from the final response; `Main/client.py` keeps that trace only as dashboard diagnostic metadata and excludes it from parsing, routing, and conversation history. Only the final response can become an experiment message or answer. The default total generation safety ceiling is 4096 tokens because hidden reasoning and the final response share Ollama's output-token limit. The visible final response must remain under 80 token-like units; overlong responses are recorded as invalid without truncation or replacement.
 
-Each topology restricts how information can move between agents, allowing their efficiency and accuracy to be compared.
+Before an automated study starts, the dashboard verifies that all five clients report `gemma4:e2b-it-qat` and that passwordless power-off is available on every client and the server Jetson. A completed study powers off the five client Jetsons first and the server Jetson last.
 
-## Project Structure
+## Project structure
 
-The experiment is implemented as a local multi-agent system. A Python dashboard server coordinates trials, assigns private figure lists, routes messages according to the selected topology, and records trial results. Each Jetson runs a client connected to the server over TCP. The client sends prompts to a locally hosted SLM through Ollama and returns the generated message or final answer to the server.
+- `gemma3/` contains the Gemma 3 implementation:
+  - `Main/` contains the topology-aware Jetson clients.
+  - `Site/` contains the live dashboard and HTTP/TCP coordination server.
+  - `results/` contains the curated Report 1, Report 4, and Report 5 data, manifests, and summary tables.
+  - `scripts/` contains deployment and maintenance helpers.
+- `gemma4/` contains the Gemma 4 implementation:
+  - `Main/` contains the topology-aware Jetson clients.
+  - `Site/` contains the live dashboard and HTTP/TCP coordination server.
+  - `results/` contains the curated Report 2 data, manifest, and analysis tables.
+  - `scripts/` contains deployment and maintenance helpers.
+  - `tests/` contains the Gemma 4 automated tests.
+- `G3_G4_summary/` contains the Gemma 3–Gemma 4 comparison PDF, Power BI report link, and supporting tables.
+- `project_structure.txt` documents the research objective, system architecture, and organized repository layout.
+- `project_launch.txt` provides the deployment, launch, monitoring, and recovery instructions.
+- `experiment_flow.txt` explains the end-to-end experiment flow and topology-specific behavior.
+- `requirements.txt` lists the Python dependency required by the clients.
 
-```text
-Private figure lists
-        ↓
-SLM agents on Jetsons
-        ↓
-Jetson client
-        ↓
-TCP experiment server
-        ↓
-Topology-based message routing
-        ↓
-Dashboard, results, and statistics
+## Running the live dashboard
+
+Start the dashboard server on the server Jetson:
+
+```bash
+sudo python3 Site/dashboard_server.py \
+  --http-host 0.0.0.0 --http-port 80 \
+  --tcp-host 0.0.0.0 --tcp-port 5001
 ```
 
-```text
-Coordination_LLM/
-├── Main/
-│   ├── client.py
-│   ├── circle_client.py
-│   ├── chain_client.py
-│   ├── y_client.py
-│   ├── wheel_client.py
-│   └── shared_features_client.py
-│
-├── Site/
-│   ├── dashboard_server.py
-│   ├── index.html
-│   ├── styles.css
-│   ├── app.js
-│   └── minds-logo.png
-│
-├── notes.txt
-└── README.md
-```
-
-### `Main/`
-
-Contains the Jetson client entry point, topology-specific client logic, and shared prompt helpers.
-
-`Main/client.py` is the main client file executed on each Jetson. It connects to the TCP server, receives trial instructions, calls a locally hosted SLM through Ollama, and sends messages or final answers back to the server.
-
-`shared_features_client.py` contains shared prompt sections used by the private-message topology clients. It defines common prompt content such as the experiment setup, agent state, recent message history, answer rules, and output format. This helps control what information agents see and how their responses are structured.
-
-`circle_client.py`, `chain_client.py`, `y_client.py`, and `wheel_client.py` add topology-specific prompts and helper code for each communication structure.
-
-### `Site/`
-
-Contains the live dashboard and experiment server.
-
-`Site/dashboard_server.py` serves the web interface and manages TCP communication with the Jetsons.
-
-### `notes.txt`
-
-Contains short setup and operating notes for the local experiment environment.
-
-The system is designed to run on a local network without requiring internet access during trials.
-
-## Metrics Collected
-
-The experiment records:
-
-* Trial number
-* Selected topology
-* Correct common figure
-* Agent answers
-* Success or failure
-* Total messages
-* Trial duration
-* Temperature
+Then open the server Jetson's address in a browser and connect the client Jetsons using `Main/client.py`.

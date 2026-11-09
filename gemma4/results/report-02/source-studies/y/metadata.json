@@ -1,0 +1,121 @@
+{
+  "batches": [
+    {
+      "average_messages": 25.46,
+      "average_time_seconds": 1266.0108000000005,
+      "batch_id": "y-temperature-0",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/run-de35e52effd2-y-study/y/temperature-0",
+      "ollama_options": {
+        "num_predict": 4096,
+        "repeat_penalty": 1.0,
+        "temperature": 0.0,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.48,
+      "successes": 24,
+      "temperature": 0.0,
+      "topology": "y"
+    },
+    {
+      "average_messages": 25.42,
+      "average_time_seconds": 1245.9486000000004,
+      "batch_id": "y-temperature-0.05",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/run-de35e52effd2-y-study/y/temperature-0.05",
+      "ollama_options": {
+        "num_predict": 4096,
+        "repeat_penalty": 1.0,
+        "temperature": 0.05,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.48,
+      "successes": 24,
+      "temperature": 0.05,
+      "topology": "y"
+    },
+    {
+      "average_messages": 24.4,
+      "average_time_seconds": 1219.4793999999997,
+      "batch_id": "y-temperature-0.1",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/run-de35e52effd2-y-study/y/temperature-0.1",
+      "ollama_options": {
+        "num_predict": 4096,
+        "repeat_penalty": 1.0,
+        "temperature": 0.1,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.46,
+      "successes": 23,
+      "temperature": 0.1,
+      "topology": "y"
+    },
+    {
+      "average_messages": 27.82,
+      "average_time_seconds": 1435.4601999999995,
+      "batch_id": "y-temperature-0.2",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/run-de35e52effd2-y-study/y/temperature-0.2",
+      "ollama_options": {
+        "num_predict": 4096,
+        "repeat_penalty": 1.0,
+        "temperature": 0.2,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.54,
+      "successes": 27,
+      "temperature": 0.2,
+      "topology": "y"
+    },
+    {
+      "average_messages": 28.18,
+      "average_time_seconds": 1679.7033999999999,
+      "batch_id": "y-temperature-1",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/run-de35e52effd2-y-study/y/temperature-1",
+      "ollama_options": {
+        "num_predict": 4096,
+        "repeat_penalty": 1.0,
+        "temperature": 1.0,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.28,
+      "successes": 14,
+      "temperature": 1.0,
+      "topology": "y"
+    }
+  ],
+  "completed_at": "2026-05-17T02:53:13.398977+00:00",
+  "completed_batches": 5,
+  "cooling": {
+    "active": false,
+    "kind": null,
+    "started_at": null,
+    "until": null
+  },
+  "cooling_options": {
+    "between_temperatures_minutes": 5.0,
+    "between_topologies_minutes": 15.0
+  },
+  "model": "gemma4:e2b-it-qat",
+  "ollama_restart_interval_trials": 25,
+  "ollama_warmup_model": "gemma4:e2b-it-qat",
+  "ollama_warmup_timeout_seconds_per_attempt": 180,
+  "started_at": "2026-05-13T00:28:00.179230+00:00",
+  "status": "complete",
+  "study_id": "run-de35e52effd2-y-study",
+  "study_kind": "y",
+  "study_label": "Y study",
+  "target_trials_per_batch": 50,
+  "topologies": [
+    "y"
+  ],
+  "total_batches": 5,
+  "total_trials": 250
+}

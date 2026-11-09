@@ -1,0 +1,17 @@
+{
+  "batch_id": "temperature-0.5",
+  "completed_at": "2026-05-13T10:23:15.079815+00:00",
+  "completed_trials": 50,
+  "max_messages_per_trial": 50,
+  "num_agents": 5,
+  "ollama_options": {
+    "num_predict": 77,
+    "repeat_penalty": 1.0,
+    "temperature": 0.5,
+    "top_p": 1.0
+  },
+  "started_at": "2026-05-13T09:08:42.963163+00:00",
+  "status": "complete",
+  "target_trials": 50,
+  "topology": "wheel"
+}

@@ -1,0 +1,78 @@
+{
+  "batches": [
+    {
+      "average_messages": 12.36,
+      "average_time_seconds": 57.35280000000001,
+      "batch_id": "circle-temperature-0",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/20260513-0017-circle-study/circle/temperature-0",
+      "ollama_options": {
+        "num_predict": 77,
+        "repeat_penalty": 1.0,
+        "temperature": 0.0,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.2,
+      "successes": 10,
+      "temperature": 0.0,
+      "topology": "circle"
+    },
+    {
+      "average_messages": 12.0,
+      "average_time_seconds": 56.4432,
+      "batch_id": "circle-temperature-0.5",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/20260513-0017-circle-study/circle/temperature-0.5",
+      "ollama_options": {
+        "num_predict": 77,
+        "repeat_penalty": 1.0,
+        "temperature": 0.5,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.34,
+      "successes": 17,
+      "temperature": 0.5,
+      "topology": "circle"
+    },
+    {
+      "average_messages": 10.96,
+      "average_time_seconds": 51.48879999999999,
+      "batch_id": "circle-temperature-1",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/20260513-0017-circle-study/circle/temperature-1",
+      "ollama_options": {
+        "num_predict": 77,
+        "repeat_penalty": 1.0,
+        "temperature": 1.0,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.4,
+      "successes": 20,
+      "temperature": 1.0,
+      "topology": "circle"
+    }
+  ],
+  "completed_at": "2026-05-13T03:04:26.268251+00:00",
+  "completed_batches": 3,
+  "cooling": {
+    "active": false,
+    "kind": null,
+    "started_at": null,
+    "until": null
+  },
+  "cooling_options": {
+    "between_temperatures_minutes": 5.0,
+    "between_topologies_minutes": 15.0
+  },
+  "started_at": "2026-05-13T00:17:14.301179+00:00",
+  "status": "complete",
+  "study_id": "20260513-0017-circle-study",
+  "target_trials_per_batch": 50,
+  "temperature_data_file": "temperatures.jsonl",
+  "temperature_samples": 12,
+  "total_batches": 3,
+  "total_trials": 150
+}

@@ -1,0 +1,481 @@
+{
+  "report_id": "gemma3-report-04",
+  "model": "Gemma 3",
+  "included_topologies": [
+    "circle",
+    "chain",
+    "y",
+    "wheel"
+  ],
+  "temperatures": [
+    0,
+    0.05,
+    0.1,
+    0.2,
+    1
+  ],
+  "completed_trials": 1000,
+  "files": [
+    {
+      "path": "gemma3-50trials-data.txt",
+      "bytes": 30452,
+      "sha256": "1857246b421c4cfae73d6697fc22969f45a719c950782ee4cf1042e9fe689b1c"
+    },
+    {
+      "path": "metadata.json",
+      "bytes": 11869,
+      "sha256": "986b42977076021591465bb0491719cf22ab87605ef8b23ef853b40f7bace3d6"
+    },
+    {
+      "path": "poweroff-log.jsonl",
+      "bytes": 637,
+      "sha256": "d60ef34d472584f61c848c216f84241c705e753ff3b9230ea8c8fa7106233a99",
+      "records": 1
+    },
+    {
+      "path": "raw/chain/temperature-0/messages.jsonl",
+      "bytes": 389149,
+      "sha256": "54f4e1aa54b1be87e121b876785cd272cba5dde46181cb172338e3e522afe943",
+      "records": 845
+    },
+    {
+      "path": "raw/chain/temperature-0/metadata.json",
+      "bytes": 405,
+      "sha256": "a19c4e8e2ac9a866b03078210dcd4c4da559008df2715b5704a415def2f755ef"
+    },
+    {
+      "path": "raw/chain/temperature-0/report.md",
+      "bytes": 11502,
+      "sha256": "27a6a64ff3f6e199798b941ef37f05ff8c6f89e813672c909ea9e2bfa1aee302"
+    },
+    {
+      "path": "raw/chain/temperature-0/trials.jsonl",
+      "bytes": 79381,
+      "sha256": "f8a6a685b001b910e6ab49b29b18743fc400c2879787be41dea7a0a8dcb7cbc2",
+      "records": 50
+    },
+    {
+      "path": "raw/chain/temperature-0.05/messages.jsonl",
+      "bytes": 374364,
+      "sha256": "3cdaa78e3250390dd77a1e76563a723b06c6e20b970c92878acd8c46e2d85638",
+      "records": 821
+    },
+    {
+      "path": "raw/chain/temperature-0.05/metadata.json",
+      "bytes": 409,
+      "sha256": "e767be9fc46dee5e61967445056a143531d949107d4477699bc1ae2ee1150da1"
+    },
+    {
+      "path": "raw/chain/temperature-0.05/report.md",
+      "bytes": 11385,
+      "sha256": "ff20c2e38b1f8ee821de535ec168d0f0afbfa226a4fd5d8c7bdcd773a413dfac"
+    },
+    {
+      "path": "raw/chain/temperature-0.05/trials.jsonl",
+      "bytes": 79597,
+      "sha256": "1ea3508851f8479fde9c42956b730e7bc9a80c64def03083a7d207ae99bc2326",
+      "records": 50
+    },
+    {
+      "path": "raw/chain/temperature-0.1/messages.jsonl",
+      "bytes": 421676,
+      "sha256": "16eb78d70f8503d45345d7881dd0b63328b14dab380051666b1dea8f1f083656",
+      "records": 938
+    },
+    {
+      "path": "raw/chain/temperature-0.1/metadata.json",
+      "bytes": 407,
+      "sha256": "aef0decf5e0d603ad248489caf3d14a390763cf9eae662e17c04c21e1296b267"
+    },
+    {
+      "path": "raw/chain/temperature-0.1/report.md",
+      "bytes": 11651,
+      "sha256": "a500bb0666873bbf481bd691ed122f327691c72b43d967453d145b91dd551eac"
+    },
+    {
+      "path": "raw/chain/temperature-0.1/trials.jsonl",
+      "bytes": 79555,
+      "sha256": "38edfa3cf120e6026accf207ea699d76240fca6d631fafb8f949a6899c495e79",
+      "records": 50
+    },
+    {
+      "path": "raw/chain/temperature-0.2/messages.jsonl",
+      "bytes": 388534,
+      "sha256": "0787bf4c1ad9f33729eb5b0819bba534756bc067b1eb3dc19afa493d31fab8ae",
+      "records": 856
+    },
+    {
+      "path": "raw/chain/temperature-0.2/metadata.json",
+      "bytes": 407,
+      "sha256": "0270fce41f3e2a751b5053edcdd816bb68a38b0b99b5fc04cf737199691a4da4"
+    },
+    {
+      "path": "raw/chain/temperature-0.2/report.md",
+      "bytes": 9981,
+      "sha256": "cf32f58961475fec7b74548a3bb7ef32e8c746a0478c99004980543314a093c6"
+    },
+    {
+      "path": "raw/chain/temperature-0.2/trials.jsonl",
+      "bytes": 79481,
+      "sha256": "ffccd677ead331c70a22afee30f92b4661836e0b3c88103731984008aaf1df8d",
+      "records": 50
+    },
+    {
+      "path": "raw/chain/temperature-1/messages.jsonl",
+      "bytes": 362380,
+      "sha256": "0dc50c715ecd59f99bb2947c5f1058d4407cbc7e0675cd6b3c45ddea3e7fdd28",
+      "records": 824
+    },
+    {
+      "path": "raw/chain/temperature-1/metadata.json",
+      "bytes": 405,
+      "sha256": "69f5d31fcec946ff8fd37e48680b1adf5639a856d753c95977498a8bb9a11c5b"
+    },
+    {
+      "path": "raw/chain/temperature-1/report.md",
+      "bytes": 11748,
+      "sha256": "75ac772dbc0de6c6ae08da1616878cc756c342d3b1b77a5ffe248776c38d2b06"
+    },
+    {
+      "path": "raw/chain/temperature-1/trials.jsonl",
+      "bytes": 79901,
+      "sha256": "b0d9c385e6c9fc693c4a8664845e72b1ddbdd31454757918b33b26cd1909693d",
+      "records": 50
+    },
+    {
+      "path": "raw/circle/temperature-0/messages.jsonl",
+      "bytes": 324882,
+      "sha256": "65790cfe175e8e023383e3b2288611b208ec59bd8732812909c0dae48fa26cd5",
+      "records": 715
+    },
+    {
+      "path": "raw/circle/temperature-0/metadata.json",
+      "bytes": 406,
+      "sha256": "0323a4123f411bc807f966f95371d3dd590d2030ea0bc8774f3d501e2457034f"
+    },
+    {
+      "path": "raw/circle/temperature-0/report.md",
+      "bytes": 10294,
+      "sha256": "b992f5057be97952f4e7b1410803573b87c1278753028b30fed4eb4ccd651a5a"
+    },
+    {
+      "path": "raw/circle/temperature-0/trials.jsonl",
+      "bytes": 79520,
+      "sha256": "3a66571b2dc6a7cf32bcf6430a8e856224409375706db6ec72b6013da24e56d2",
+      "records": 50
+    },
+    {
+      "path": "raw/circle/temperature-0.05/messages.jsonl",
+      "bytes": 431734,
+      "sha256": "cc799fd4fb8f2c00d8c0fe048550ee60acc4ff5faeb429a624ce430ce2c9f7ea",
+      "records": 950
+    },
+    {
+      "path": "raw/circle/temperature-0.05/metadata.json",
+      "bytes": 410,
+      "sha256": "a855e0c40b9ad068e965f2b1250a5f8031df7653f362de10d5d99ad4dba9ce2b"
+    },
+    {
+      "path": "raw/circle/temperature-0.05/report.md",
+      "bytes": 11291,
+      "sha256": "7f95ada3714e4e1cec8ba329dd76d292839a67d5f6346fcbfe17c03e3b65d130"
+    },
+    {
+      "path": "raw/circle/temperature-0.05/trials.jsonl",
+      "bytes": 79544,
+      "sha256": "cb8fa2a6b85b68d42debb2d28e470d5bb24fd982de7d7104937790f4d6d8dbcb",
+      "records": 50
+    },
+    {
+      "path": "raw/circle/temperature-0.1/messages.jsonl",
+      "bytes": 370713,
+      "sha256": "cfcb9dbf3ee4dfb37295e16b759349aa0b335b69895352b0a66b1903e27f5ca6",
+      "records": 814
+    },
+    {
+      "path": "raw/circle/temperature-0.1/metadata.json",
+      "bytes": 408,
+      "sha256": "96ee73f482231e14c065e57cd6eaa04176cf9d3b4b43e1a5df675ea7e2f4ffa0"
+    },
+    {
+      "path": "raw/circle/temperature-0.1/report.md",
+      "bytes": 11702,
+      "sha256": "15d1c7be0c53d8f5d57a8d1c6625f6e782c6d374d745f3a5cb7d82a27d409d33"
+    },
+    {
+      "path": "raw/circle/temperature-0.1/trials.jsonl",
+      "bytes": 79554,
+      "sha256": "5149009606c98b6cb191ec4e1ce42e5a595c9b12ad3d41113ea3118fcdd5d833",
+      "records": 50
+    },
+    {
+      "path": "raw/circle/temperature-0.2/messages.jsonl",
+      "bytes": 328067,
+      "sha256": "60332fc61862f1833168899c80ab172e9116f42233596beeae73fbec9e787cfb",
+      "records": 712
+    },
+    {
+      "path": "raw/circle/temperature-0.2/metadata.json",
+      "bytes": 408,
+      "sha256": "c5754b7a114bed40e24f2c5773facda591343b966d65eb765eb38d4ebc462222"
+    },
+    {
+      "path": "raw/circle/temperature-0.2/report.md",
+      "bytes": 11702,
+      "sha256": "6764ec13fb134a4aa132d1bd0a7dd204fa98294aafea0c0379713cff42d0bbfd"
+    },
+    {
+      "path": "raw/circle/temperature-0.2/trials.jsonl",
+      "bytes": 79479,
+      "sha256": "e2230c90fb613626cdea134f84bc1ab1126c81d738eebe6ed65ddb7a23552254",
+      "records": 50
+    },
+    {
+      "path": "raw/circle/temperature-1/messages.jsonl",
+      "bytes": 331555,
+      "sha256": "a669c2186dac62f017aa0880ccd4f5e654eb6ce3eb4d56b88ef52e322c8b8680",
+      "records": 722
+    },
+    {
+      "path": "raw/circle/temperature-1/metadata.json",
+      "bytes": 406,
+      "sha256": "f076c18ad894e7050c93ad658949478b3faee2231776011c1135add7adab753c"
+    },
+    {
+      "path": "raw/circle/temperature-1/report.md",
+      "bytes": 10414,
+      "sha256": "947a13ab29ae4081cd2484a49d5c38065c984abbc297bf06883948cf899116da"
+    },
+    {
+      "path": "raw/circle/temperature-1/trials.jsonl",
+      "bytes": 79510,
+      "sha256": "03a2a2c193097732753a9f6457c5672e4ac1076d7f19748dd4f1ea6ac94fab6a",
+      "records": 50
+    },
+    {
+      "path": "raw/wheel/temperature-0/messages.jsonl",
+      "bytes": 539417,
+      "sha256": "da427960b81f5adad8d79305a62fb5afc6d7315efc58159cc22299e7796aac2b",
+      "records": 1028
+    },
+    {
+      "path": "raw/wheel/temperature-0/metadata.json",
+      "bytes": 405,
+      "sha256": "94d54523740750ab92fda183dd47a9543ecd79dd2293f8d1cbfb0721cb27c803"
+    },
+    {
+      "path": "raw/wheel/temperature-0/report.md",
+      "bytes": 11918,
+      "sha256": "00636001c2525c3ff8b6ea2e0e033b31b88530061e6f8278b64b7de58ed540aa"
+    },
+    {
+      "path": "raw/wheel/temperature-0/trials.jsonl",
+      "bytes": 80088,
+      "sha256": "a045f1981bb8a6f45be0990652826f957c6deb8371ea9d1467702bc59430306a",
+      "records": 50
+    },
+    {
+      "path": "raw/wheel/temperature-0.05/messages.jsonl",
+      "bytes": 461414,
+      "sha256": "58f3510005ada7af9722781ef1ed0aa03c39db59623cc67eccaae40eedfabbb5",
+      "records": 878
+    },
+    {
+      "path": "raw/wheel/temperature-0.05/metadata.json",
+      "bytes": 409,
+      "sha256": "b28958a0539bceca0c0436f742f16e3416ae62f78dc465a3a359b5929b23494b"
+    },
+    {
+      "path": "raw/wheel/temperature-0.05/report.md",
+      "bytes": 11509,
+      "sha256": "db6327aba52efa6a57689c1c9c539955374f1f45c0c4d737d85f2dec75290988"
+    },
+    {
+      "path": "raw/wheel/temperature-0.05/trials.jsonl",
+      "bytes": 79845,
+      "sha256": "904f34c01a0f8850a44c3b22a7cafe4938e24b1c441bd431641657b350d0bbdb",
+      "records": 50
+    },
+    {
+      "path": "raw/wheel/temperature-0.1/messages.jsonl",
+      "bytes": 488072,
+      "sha256": "313e3bed8495afaa9a24bb2714a0eda56609a40320359e51bcb17a2a5c37fee7",
+      "records": 916
+    },
+    {
+      "path": "raw/wheel/temperature-0.1/metadata.json",
+      "bytes": 407,
+      "sha256": "71e4eff0539e7ac5cc75954ff9e11d45689eb15a80728c421df4507733d64941"
+    },
+    {
+      "path": "raw/wheel/temperature-0.1/report.md",
+      "bytes": 10104,
+      "sha256": "09b6302ea68a6714c3287feb66e58288a642c20f9dfe6298e2e3dcdf15471a1c"
+    },
+    {
+      "path": "raw/wheel/temperature-0.1/trials.jsonl",
+      "bytes": 79692,
+      "sha256": "da795614f987c891917bc6284221bd2a0d056815af8c81d7b71a19184a02dfcd",
+      "records": 50
+    },
+    {
+      "path": "raw/wheel/temperature-0.2/messages.jsonl",
+      "bytes": 492092,
+      "sha256": "318e17ebb4f728494ef0a4cfc65e3df49d9c56a02d87091c7aeff5740a877874",
+      "records": 923
+    },
+    {
+      "path": "raw/wheel/temperature-0.2/metadata.json",
+      "bytes": 407,
+      "sha256": "134a4d4bd3feb49632fb44fa9c8da6b0f2b9d19bc47b324fdffb0295ca96df2b"
+    },
+    {
+      "path": "raw/wheel/temperature-0.2/report.md",
+      "bytes": 11554,
+      "sha256": "36f51897eb311151eacde1648f0190807309d1a8b9a3abf503c8588a3eac7a0c"
+    },
+    {
+      "path": "raw/wheel/temperature-0.2/trials.jsonl",
+      "bytes": 79640,
+      "sha256": "5cabc8180a2526344f0006146f4feedbd23bbfb8653ea31883db616241bb91c4",
+      "records": 50
+    },
+    {
+      "path": "raw/wheel/temperature-1/messages.jsonl",
+      "bytes": 463572,
+      "sha256": "d43323c3bd5c1495a7e9e0d127cab62edc0ff4d6b4e5c582d8e937f1df41ff8a",
+      "records": 912
+    },
+    {
+      "path": "raw/wheel/temperature-1/metadata.json",
+      "bytes": 405,
+      "sha256": "a026b64b3e2451458ae406e5dd690b2cb171520e5a5e0ddaca870eb4f347dc3e"
+    },
+    {
+      "path": "raw/wheel/temperature-1/report.md",
+      "bytes": 11672,
+      "sha256": "d8c7add9df8312f77b76c10724d694c0d488bc2bb93629bfffaa82fdb16039dd"
+    },
+    {
+      "path": "raw/wheel/temperature-1/trials.jsonl",
+      "bytes": 79585,
+      "sha256": "2af247bfd960985922e3e6a2f6bb23a70b3b8fe7935bc0b2faae8d20ca3d9b89",
+      "records": 50
+    },
+    {
+      "path": "raw/y/temperature-0/messages.jsonl",
+      "bytes": 424357,
+      "sha256": "1c44609e4ab2fdcd54695266791d6a406faa4b7c80edee54234d7299e48a1907",
+      "records": 924
+    },
+    {
+      "path": "raw/y/temperature-0/metadata.json",
+      "bytes": 401,
+      "sha256": "f3af1afb824541b8a65d7f955a43a24597de4a5d2fa94614c74f8db62affd704"
+    },
+    {
+      "path": "raw/y/temperature-0/report.md",
+      "bytes": 11604,
+      "sha256": "ddca8bebcab8282917c4e74157301e5c6687f87a443e2f01262c996c817c1e91"
+    },
+    {
+      "path": "raw/y/temperature-0/trials.jsonl",
+      "bytes": 79267,
+      "sha256": "32405b04f325af462246fab53923dee34090ba836340243202111d44f43eeee3",
+      "records": 50
+    },
+    {
+      "path": "raw/y/temperature-0.05/messages.jsonl",
+      "bytes": 427500,
+      "sha256": "30db6cb8eee7337812e56409509d46820a046da5a77497c455c1ae269a8f9a07",
+      "records": 931
+    },
+    {
+      "path": "raw/y/temperature-0.05/metadata.json",
+      "bytes": 405,
+      "sha256": "0b791868b2ee61c5ed4f60ac48d3d617e0da96215276885c6d5e416885f04dff"
+    },
+    {
+      "path": "raw/y/temperature-0.05/report.md",
+      "bytes": 11658,
+      "sha256": "cd942decc11b17b6423523bdf29d0412e8d8dde6d54566c7ee5ea382c44d4f8a"
+    },
+    {
+      "path": "raw/y/temperature-0.05/trials.jsonl",
+      "bytes": 79596,
+      "sha256": "4d974f2af9a8b6f91feeefe7367b443001e921a060a037aacf830c4b97919135",
+      "records": 50
+    },
+    {
+      "path": "raw/y/temperature-0.1/messages.jsonl",
+      "bytes": 392773,
+      "sha256": "26cb74f5f596c91a750aaa0379875b02939aae234fe6067108129b9d81d35897",
+      "records": 850
+    },
+    {
+      "path": "raw/y/temperature-0.1/metadata.json",
+      "bytes": 403,
+      "sha256": "48ef456ada520cb196a75dc5877e72962fe793f22dc66e5543f470bf8f8998d9"
+    },
+    {
+      "path": "raw/y/temperature-0.1/report.md",
+      "bytes": 11243,
+      "sha256": "7c5daee703239d54ce9e22946f6f4f183b3fa191388f43ac7befccde0b1e54fe"
+    },
+    {
+      "path": "raw/y/temperature-0.1/trials.jsonl",
+      "bytes": 79227,
+      "sha256": "9c000838189791e0f0406c08fc24d9260c2f4bbe52b7ffff64ac15797572165c",
+      "records": 50
+    },
+    {
+      "path": "raw/y/temperature-0.2/messages.jsonl",
+      "bytes": 451347,
+      "sha256": "5d2a522fd2aabff9c1b5c0bb71f1ae3cd9a74b0f00ddf562f6d6e3a0d42df24a",
+      "records": 978
+    },
+    {
+      "path": "raw/y/temperature-0.2/metadata.json",
+      "bytes": 403,
+      "sha256": "9d2ab1f806916f63619ccc79ade6fee2326ddab39addb822f0be3780472a4ae2"
+    },
+    {
+      "path": "raw/y/temperature-0.2/report.md",
+      "bytes": 11853,
+      "sha256": "58c7b554ac28d02a0581c6d47155ec00706b42260ef8c5a88b6a11a920bbd900"
+    },
+    {
+      "path": "raw/y/temperature-0.2/trials.jsonl",
+      "bytes": 79773,
+      "sha256": "225528fc4cfa503eed6adab305ebf983e2cd2e6f6da63ff665f0b82355c3ef42",
+      "records": 50
+    },
+    {
+      "path": "raw/y/temperature-1/messages.jsonl",
+      "bytes": 455321,
+      "sha256": "981e372b5ca3411c1719c6c4faca1c90ff1230c1b0d5704d945b23805686fd13",
+      "records": 1011
+    },
+    {
+      "path": "raw/y/temperature-1/metadata.json",
+      "bytes": 401,
+      "sha256": "4979f4e052493cc99046a5a9b795afb9fabbf1c9186c232e37f8f0c3c63a3e73"
+    },
+    {
+      "path": "raw/y/temperature-1/report.md",
+      "bytes": 11726,
+      "sha256": "3e5e9f0cabdbfbef6b6dcdc9fcc26fd25d3b010f906ba2f35d9d514368d4dd77"
+    },
+    {
+      "path": "raw/y/temperature-1/trials.jsonl",
+      "bytes": 79430,
+      "sha256": "6ae8491e3f9c8ac9a49d2d28900cda00d4bd9d815f31f31980b54b35df350b78",
+      "records": 50
+    },
+    {
+      "path": "report.md",
+      "bytes": 30452,
+      "sha256": "1857246b421c4cfae73d6697fc22969f45a719c950782ee4cf1042e9fe689b1c"
+    }
+  ]
+}

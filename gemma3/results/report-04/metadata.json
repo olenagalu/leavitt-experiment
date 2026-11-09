@@ -1,0 +1,391 @@
+{
+  "batches": [
+    {
+      "average_messages": 14.3,
+      "average_time_seconds": 172.7608,
+      "batch_id": "circle-temperature-0",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/run-2ff44b7bef35-four-topologies-study/circle/temperature-0",
+      "ollama_options": {
+        "num_predict": 77,
+        "repeat_penalty": 1.0,
+        "temperature": 0.0,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.34,
+      "successes": 17,
+      "temperature": 0.0,
+      "topology": "circle"
+    },
+    {
+      "average_messages": 19.0,
+      "average_time_seconds": 195.24899999999994,
+      "batch_id": "circle-temperature-0.05",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/run-2ff44b7bef35-four-topologies-study/circle/temperature-0.05",
+      "ollama_options": {
+        "num_predict": 77,
+        "repeat_penalty": 1.0,
+        "temperature": 0.05,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.22,
+      "successes": 11,
+      "temperature": 0.05,
+      "topology": "circle"
+    },
+    {
+      "average_messages": 16.28,
+      "average_time_seconds": 173.60239999999993,
+      "batch_id": "circle-temperature-0.1",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/run-2ff44b7bef35-four-topologies-study/circle/temperature-0.1",
+      "ollama_options": {
+        "num_predict": 77,
+        "repeat_penalty": 1.0,
+        "temperature": 0.1,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.28,
+      "successes": 14,
+      "temperature": 0.1,
+      "topology": "circle"
+    },
+    {
+      "average_messages": 14.24,
+      "average_time_seconds": 158.73059999999998,
+      "batch_id": "circle-temperature-0.2",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/run-2ff44b7bef35-four-topologies-study/circle/temperature-0.2",
+      "ollama_options": {
+        "num_predict": 77,
+        "repeat_penalty": 1.0,
+        "temperature": 0.2,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.26,
+      "successes": 13,
+      "temperature": 0.2,
+      "topology": "circle"
+    },
+    {
+      "average_messages": 14.44,
+      "average_time_seconds": 159.2732,
+      "batch_id": "circle-temperature-1",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/run-2ff44b7bef35-four-topologies-study/circle/temperature-1",
+      "ollama_options": {
+        "num_predict": 77,
+        "repeat_penalty": 1.0,
+        "temperature": 1.0,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.16,
+      "successes": 8,
+      "temperature": 1.0,
+      "topology": "circle"
+    },
+    {
+      "average_messages": 16.9,
+      "average_time_seconds": 221.85479999999998,
+      "batch_id": "chain-temperature-0",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/run-2ff44b7bef35-four-topologies-study/chain/temperature-0",
+      "ollama_options": {
+        "num_predict": 77,
+        "repeat_penalty": 1.0,
+        "temperature": 0.0,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.18,
+      "successes": 9,
+      "temperature": 0.0,
+      "topology": "chain"
+    },
+    {
+      "average_messages": 16.42,
+      "average_time_seconds": 206.11859999999996,
+      "batch_id": "chain-temperature-0.05",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/run-2ff44b7bef35-four-topologies-study/chain/temperature-0.05",
+      "ollama_options": {
+        "num_predict": 77,
+        "repeat_penalty": 1.0,
+        "temperature": 0.05,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.18,
+      "successes": 9,
+      "temperature": 0.05,
+      "topology": "chain"
+    },
+    {
+      "average_messages": 18.76,
+      "average_time_seconds": 202.5426,
+      "batch_id": "chain-temperature-0.1",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/run-2ff44b7bef35-four-topologies-study/chain/temperature-0.1",
+      "ollama_options": {
+        "num_predict": 77,
+        "repeat_penalty": 1.0,
+        "temperature": 0.1,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.2,
+      "successes": 10,
+      "temperature": 0.1,
+      "topology": "chain"
+    },
+    {
+      "average_messages": 17.12,
+      "average_time_seconds": 203.25560000000002,
+      "batch_id": "chain-temperature-0.2",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/run-2ff44b7bef35-four-topologies-study/chain/temperature-0.2",
+      "ollama_options": {
+        "num_predict": 77,
+        "repeat_penalty": 1.0,
+        "temperature": 0.2,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.26,
+      "successes": 13,
+      "temperature": 0.2,
+      "topology": "chain"
+    },
+    {
+      "average_messages": 16.48,
+      "average_time_seconds": 177.907,
+      "batch_id": "chain-temperature-1",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/run-2ff44b7bef35-four-topologies-study/chain/temperature-1",
+      "ollama_options": {
+        "num_predict": 77,
+        "repeat_penalty": 1.0,
+        "temperature": 1.0,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.32,
+      "successes": 16,
+      "temperature": 1.0,
+      "topology": "chain"
+    },
+    {
+      "average_messages": 18.48,
+      "average_time_seconds": 245.2238,
+      "batch_id": "y-temperature-0",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/run-2ff44b7bef35-four-topologies-study/y/temperature-0",
+      "ollama_options": {
+        "num_predict": 77,
+        "repeat_penalty": 1.0,
+        "temperature": 0.0,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.28,
+      "successes": 14,
+      "temperature": 0.0,
+      "topology": "y"
+    },
+    {
+      "average_messages": 18.62,
+      "average_time_seconds": 212.86020000000005,
+      "batch_id": "y-temperature-0.05",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/run-2ff44b7bef35-four-topologies-study/y/temperature-0.05",
+      "ollama_options": {
+        "num_predict": 77,
+        "repeat_penalty": 1.0,
+        "temperature": 0.05,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.32,
+      "successes": 16,
+      "temperature": 0.05,
+      "topology": "y"
+    },
+    {
+      "average_messages": 17.0,
+      "average_time_seconds": 194.69340000000008,
+      "batch_id": "y-temperature-0.1",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/run-2ff44b7bef35-four-topologies-study/y/temperature-0.1",
+      "ollama_options": {
+        "num_predict": 77,
+        "repeat_penalty": 1.0,
+        "temperature": 0.1,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.34,
+      "successes": 17,
+      "temperature": 0.1,
+      "topology": "y"
+    },
+    {
+      "average_messages": 19.56,
+      "average_time_seconds": 302.10400000000004,
+      "batch_id": "y-temperature-0.2",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/run-2ff44b7bef35-four-topologies-study/y/temperature-0.2",
+      "ollama_options": {
+        "num_predict": 77,
+        "repeat_penalty": 1.0,
+        "temperature": 0.2,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.22,
+      "successes": 11,
+      "temperature": 0.2,
+      "topology": "y"
+    },
+    {
+      "average_messages": 20.22,
+      "average_time_seconds": 246.11419999999998,
+      "batch_id": "y-temperature-1",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/run-2ff44b7bef35-four-topologies-study/y/temperature-1",
+      "ollama_options": {
+        "num_predict": 77,
+        "repeat_penalty": 1.0,
+        "temperature": 1.0,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.24,
+      "successes": 12,
+      "temperature": 1.0,
+      "topology": "y"
+    },
+    {
+      "average_messages": 20.56,
+      "average_time_seconds": 268.767,
+      "batch_id": "wheel-temperature-0",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/run-2ff44b7bef35-four-topologies-study/wheel/temperature-0",
+      "ollama_options": {
+        "num_predict": 77,
+        "repeat_penalty": 1.0,
+        "temperature": 0.0,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.26,
+      "successes": 13,
+      "temperature": 0.0,
+      "topology": "wheel"
+    },
+    {
+      "average_messages": 17.56,
+      "average_time_seconds": 199.91099999999997,
+      "batch_id": "wheel-temperature-0.05",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/run-2ff44b7bef35-four-topologies-study/wheel/temperature-0.05",
+      "ollama_options": {
+        "num_predict": 77,
+        "repeat_penalty": 1.0,
+        "temperature": 0.05,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.4,
+      "successes": 20,
+      "temperature": 0.05,
+      "topology": "wheel"
+    },
+    {
+      "average_messages": 18.32,
+      "average_time_seconds": 218.8804,
+      "batch_id": "wheel-temperature-0.1",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/run-2ff44b7bef35-four-topologies-study/wheel/temperature-0.1",
+      "ollama_options": {
+        "num_predict": 77,
+        "repeat_penalty": 1.0,
+        "temperature": 0.1,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.22,
+      "successes": 11,
+      "temperature": 0.1,
+      "topology": "wheel"
+    },
+    {
+      "average_messages": 18.46,
+      "average_time_seconds": 257.7948,
+      "batch_id": "wheel-temperature-0.2",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/run-2ff44b7bef35-four-topologies-study/wheel/temperature-0.2",
+      "ollama_options": {
+        "num_predict": 77,
+        "repeat_penalty": 1.0,
+        "temperature": 0.2,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.3,
+      "successes": 15,
+      "temperature": 0.2,
+      "topology": "wheel"
+    },
+    {
+      "average_messages": 18.24,
+      "average_time_seconds": 214.08979999999997,
+      "batch_id": "wheel-temperature-1",
+      "completed_trials": 50,
+      "directory": "/home/minds_user/Desktop/leavitt-report/run-2ff44b7bef35-four-topologies-study/wheel/temperature-1",
+      "ollama_options": {
+        "num_predict": 77,
+        "repeat_penalty": 1.0,
+        "temperature": 1.0,
+        "top_p": 1.0
+      },
+      "status": "complete",
+      "success_rate": 0.18,
+      "successes": 9,
+      "temperature": 1.0,
+      "topology": "wheel"
+    }
+  ],
+  "completed_at": "2026-05-15T18:47:02.887919+00:00",
+  "completed_batches": 20,
+  "cooling": {
+    "active": false,
+    "kind": null,
+    "started_at": null,
+    "until": null
+  },
+  "cooling_options": {
+    "between_temperatures_minutes": 5.0,
+    "between_topologies_minutes": 15.0
+  },
+  "formatted_data_file": "gemma3-50trials-data.txt",
+  "started_at": "2026-05-13T00:54:26.260588+00:00",
+  "status": "complete",
+  "study_id": "run-2ff44b7bef35-four-topologies-study",
+  "study_kind": "four_topologies",
+  "study_label": "Four-topology study",
+  "target_trials_per_batch": 50,
+  "topologies": [
+    "circle",
+    "chain",
+    "y",
+    "wheel"
+  ],
+  "total_batches": 20,
+  "total_trials": 1000
+}

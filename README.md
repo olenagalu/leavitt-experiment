@@ -6,7 +6,7 @@ Each trial gives agents private figure lists with exactly one figure shared by a
 
 ## Demo
 
-[Open the interactive browser demo](https://olenagalu.github.io/leavitt-experiment/)
+[Launch the new interactive browser demo](https://olenagalu.github.io/leavitt-experiment/)
 
 The demo recreates the dashboard interface with simulated agents, messages, network routes, and results. It does not require access to the live Jetson network.
 

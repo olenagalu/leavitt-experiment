@@ -47,7 +47,6 @@ Before an automated study starts, the dashboard verifies that all five clients r
 - `project_structure.txt` documents the research objective, system architecture, and organized repository layout.
 - `project_launch.txt` provides the deployment, launch, monitoring, and recovery instructions.
 - `experiment_flow.txt` explains the end-to-end experiment flow and topology-specific behavior.
-- `requirements.txt` lists the Python dependency required by the clients.
 
 ## Running the live dashboard
 
